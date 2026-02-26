@@ -33,8 +33,8 @@ def extract_se_info(text: str):
     match = re.search(r'[sS](\d+)[eE](\d+)', text)
     if match:
         return int(match.group(1)), int(match.group(2))
-    # 1x01
-    match = re.search(r'(?<!\d)(\d+)x(\d+)', text)
+    # 1x01 (limitamos a 1-2 digitos para no cruzar con resoluciones como 1920x1080)
+    match = re.search(r'(?<!\d)(\d{1,2})x(\d{1,3})(?!\d|\w)', text, re.I)
     if match:
         return int(match.group(1)), int(match.group(2))
     # Temporada 1 Capitulo 1
@@ -60,6 +60,10 @@ def is_valid_match(item_name: str, expected_filename: str, title: str, year: str
         # Permitir packs de temporada entera (i_e is None)
         if episode is not None and i_e is not None and i_e != episode:
             return False
+
+    # Si buscamos película (season=None) pero el archivo es claramente de serie (tiene S/E), rechazar
+    if season is None and i_s is not None:
+        return False
 
     # Si el esperado tiene S/E (fallback para películas con números o streams mal nombrados)
     e_s, e_e = extract_se_info(expected_filename)
@@ -172,6 +176,10 @@ def get_match_score(name: str, expected: str, title: str = "", year: str = "", s
             return 0
         if episode is not None and n_e is not None and n_e != episode:
             return 0
+            
+    # Si buscamos peli pero es serie
+    if season is None and n_s is not None:
+        return 0
             
     # 2. Validación estricta de Año (Sólo para películas)
     str_year = str(year).strip() if year else ""
