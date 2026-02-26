@@ -90,6 +90,10 @@ class DownloadRequest(BaseModel):
     season_number: Optional[int] = None
     episode_number: Optional[int] = None
 
+class CacheCheckRequest(BaseModel):
+    filename: str
+    title: str = ""
+
 class SetupRequest(BaseModel):
     tmdb_api_key: str
     aiostreams_url: str
@@ -638,10 +642,20 @@ def get_streams(media_type: str, tmdb_id: str):
 def download_item(req: DownloadRequest):
     """Inicia la observación del archivo"""
     job_id = f"{req.tmdb_id}_{req.season_number or 0}_{req.episode_number or 0}"
+    
+    # OPCIONAL: Check rápido si ya está en caché antes de crear el job
+    from watcher import check_file_exists
+    cached_path = check_file_exists(req.filename, req.title)
+    if cached_path:
+        print(f"[Download] Archivo ya en caché: {cached_path}. Vinculando directamente.")
+        # Podemos retornar un status especial o iniciar el proceso normal pero que termine rápido
+        # Vamos a iniciarlo normal para que el usuario vea el feedback en el tracker
+        return initiate_download_process(req, job_id, immediate_path=cached_path)
+        
     return initiate_download_process(req, job_id)
 
 import threading
-def initiate_download_process(req: DownloadRequest, job_id: str):
+def initiate_download_process(req: DownloadRequest, job_id: str, immediate_path: str = None):
     print(f"[Download] Iniciando proceso para {job_id}: {req.title}")
     
     active_jobs[job_id] = {
@@ -694,6 +708,11 @@ def initiate_download_process(req: DownloadRequest, job_id: str):
     if req.season_number:
         append_job_log(job_id, f"Buscando S{req.season_number:02d}E{(req.episode_number or 0):02d}")
     
+    if immediate_path:
+        append_job_log(job_id, f"Archivo detectado en caché instantáneamente: {os.path.basename(immediate_path)}")
+        on_found(immediate_path, req.season_number)
+        return {"status": "ok", "message": "Procesando archivo ya existente", "job_id": job_id}
+
     start_watcher_thread(
         expected_filename=req.filename, 
         title=req.title, 
@@ -876,6 +895,13 @@ def get_notifications():
 def get_active_downloads():
     """Retorna los trabajos de descarga/symlink en curso"""
     return active_jobs
+
+@app.post("/api/torbox/check-cache")
+def api_check_cache(req: CacheCheckRequest):
+    """Verifica si un archivo ya existe en TorBox"""
+    from watcher import check_file_exists
+    path = check_file_exists(req.filename, req.title)
+    return {"cached": path is not None, "path": path}
 @app.get("/api/torbox/list")
 def list_torbox_dir(path: str = "/"):
     """Lista el contenido de una carpeta en el montaje de torbox"""

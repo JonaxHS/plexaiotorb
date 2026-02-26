@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Film, Tv, Play, Pause, Plus, TerminalSquare, X, Settings, Activity, CheckCircle2, XCircle, Trash2, Link as LinkIcon } from 'lucide-react';
+import { Search, Film, Tv, Play, Pause, Plus, TerminalSquare, X, Settings, Activity, CheckCircle2, XCircle, Trash2, Link as LinkIcon, Zap, Download } from 'lucide-react';
 import TorBoxBrowser from './components/TorBoxBrowser';
 
 // Si accedes desde otro equipo en tu red (ej. iPad), usa la IP local en vez de localhost.
@@ -104,6 +104,7 @@ export default function App() {
     const [expandedJobLog, setExpandedJobLog] = useState<string | null>(null); // Currently expanded job
     const jobLogSinceRef = useRef<Record<string, number>>({});               // Cursor per job
     const jobLogsEndRef = useRef<HTMLDivElement>(null);
+    const [streamCacheStatuses, setStreamCacheStatuses] = useState<Record<string, boolean>>({}); // Cache status per stream URL
 
     // -- Live Settings State --
     const [settingsForm, setSettingsForm] = useState({ tmdb_api_key: '', aiostreams_url: '' });
@@ -619,20 +620,56 @@ export default function App() {
         }
     };
 
-    const fetchStreams = async (mediaType: string, tmdbId: number) => {
+    const fetchStreams = async (mediaType: string, tmdbId: number | string) => {
         setLoadingStreams(true);
         setStreams([]);
+        setStreamCacheStatuses({});
         addLog(`Obteniendo fuentes de AIOStreams para ID: ${tmdbId}`);
         try {
             const res = await fetch(`${API_BASE}/streams/${mediaType}/${tmdbId}`);
-            const data = await res.json();
-            setStreams(data.streams || []);
-            addLog(`${data.streams?.length || 0} streams encontrados.`);
+            if (res.ok) {
+                const data = await res.json();
+                const fetchedStreams = data.streams || [];
+                setStreams(fetchedStreams);
+                addLog(`${fetchedStreams.length} streams encontrados.`);
+
+                // Check cache for each stream
+                fetchedStreams.forEach((stream: any) => {
+                    const id = stream.url || stream.title;
+                    const filename = getFilenameEstimate(stream);
+                    if (!filename) return;
+
+                    fetch(`${API_BASE}/torbox/check-cache`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename, title: selectedItem?.title || "" })
+                    }).then(r => r.json())
+                        .then(d => {
+                            setStreamCacheStatuses(prev => ({ ...prev, [id]: d.cached }));
+                        }).catch(() => { });
+                });
+            }
         } catch (err) {
             addLog(`Error al obtener streams: ${err}`);
         } finally {
             setLoadingStreams(false);
         }
+    };
+
+    const getFilenameEstimate = (stream: any) => {
+        const videoExts = ['.mkv', '.mp4', '.avi', '.ts', '.webm'];
+        let filenameEstimate = stream.behaviorHints?.filename;
+        if (!filenameEstimate && stream.url) {
+            const urlParts = stream.url.split('/');
+            for (let i = urlParts.length - 1; i >= 0; i--) {
+                const seg = decodeURIComponent(urlParts[i]);
+                if (videoExts.some(ext => seg.toLowerCase().endsWith(ext))) {
+                    filenameEstimate = seg;
+                    break;
+                }
+            }
+        }
+        return filenameEstimate || `Unknown_${selectedItem?.id}.mkv`;
     };
 
     // Este es para cuando das click a un episodio de serie específico
@@ -673,35 +710,9 @@ export default function App() {
         setDownloadingStreamId(streamId);
 
         // Obtenemos el filename real que TorBox debería usar
-        // Extraer el filename real del stream:
-        // 1. Preferir URL si contiene filename con extensión de video (más fiable)
-        //    Algunos addons (Peerflix) retornan behaviorHints.filename SIN extensión
-        // 2. Usar behaviorHints.filename si tiene extensión válida
-        // 3. Fallback genérico
-        const videoExts = ['.mkv', '.mp4', '.avi', '.ts', '.webm'];
-        let filenameEstimate: string | undefined;
+        const filenameEstimate = getFilenameEstimate(stream);
 
-        // Intentar extraer desde la URL primero (siempre tiene la extensión correcta)
-        if (stream.url) {
-            const urlParts = stream.url.split('/');
-            for (let i = urlParts.length - 1; i >= 0; i--) {
-                const seg = decodeURIComponent(urlParts[i]);
-                if (videoExts.some(ext => seg.toLowerCase().endsWith(ext))) {
-                    filenameEstimate = seg;
-                    break;
-                }
-            }
-        }
-
-        // Fallback a behaviorHints.filename si la URL no dio resultado
-        if (!filenameEstimate && stream.behaviorHints?.filename) {
-            filenameEstimate = stream.behaviorHints.filename;
-        }
-
-        // Último fallback genérico
-        if (!filenameEstimate) {
-            filenameEstimate = `Unknown_${selectedItem?.id}.mkv`;
-        }
+        addLog(`Contactando AIOStreams para detonar descarga en TorBox...`);
 
         addLog(`Contactando AIOStreams para detonar descarga en TorBox...`);
         // Detonamos la descarga simulando que un reproductor intenta acceder al stream
@@ -808,42 +819,63 @@ export default function App() {
 
         return (
             <div className="space-y-3">
-                {streams.map((stream, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-amber-500/50 transition-colors group shadow-md shadow-black/20">
-                        <div className="flex-1 min-w-0 pr-4">
-                            <h4 className="font-medium text-zinc-200">{stream.name || "AIOStream"}</h4>
-                            <p className="text-sm text-zinc-500 mt-2 whitespace-pre-wrap leading-relaxed truncate">
-                                {stream.description || stream.title}
-                            </p>
-                            {stream.behaviorHints?.videoSize && (
-                                <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 bg-zinc-800 rounded font-mono text-xs text-amber-500/70 border border-amber-500/10">
-                                    <Activity className="w-3 h-3" />
-                                    {(stream.behaviorHints.videoSize / (1024 * 1024 * 1024)).toFixed(2)} GB
+                {streams.map((stream, idx) => {
+                    const streamId = stream.url || stream.title;
+                    const isCached = streamCacheStatuses[streamId];
+                    const isDownloading = downloadingStreamId === streamId;
+
+                    return (
+                        <div key={idx} className={`flex items-center justify-between p-4 rounded-xl bg-zinc-900 border transition-all group shadow-md shadow-black/20 ${isCached ? "border-emerald-500/30 hover:border-emerald-500/50" : "border-zinc-800 hover:border-amber-500/50"}`}>
+                            <div className="flex-1 min-w-0 pr-4">
+                                <div className="flex items-center gap-2">
+                                    <h4 className="font-medium text-zinc-200">{stream.name || "AIOStream"}</h4>
+                                    {isCached && (
+                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/20">
+                                            <Zap className="w-3 h-3 fill-emerald-400" />
+                                            En Caché
+                                        </span>
+                                    )}
                                 </div>
-                            )}
+                                <p className="text-sm text-zinc-500 mt-2 whitespace-pre-wrap leading-relaxed truncate">
+                                    {stream.description || stream.title}
+                                </p>
+                                {stream.behaviorHints?.videoSize && (
+                                    <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 bg-zinc-800 rounded font-mono text-xs text-amber-500/70 border border-amber-500/10">
+                                        <Activity className="w-3 h-3" />
+                                        {(stream.behaviorHints.videoSize / (1024 * 1024 * 1024)).toFixed(2)} GB
+                                    </div>
+                                )}
+                            </div>
+                            <button
+                                onClick={() => handleDownload(stream)}
+                                disabled={isDownloading}
+                                className={`shrink-0 flex items-center gap-2 font-bold px-4 py-2.5 rounded-lg transition-all active:scale-95 shadow-lg ${isDownloading
+                                    ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+                                    : isCached
+                                        ? "bg-emerald-500 hover:bg-emerald-400 text-zinc-950 shadow-emerald-500/20"
+                                        : "bg-amber-500 hover:bg-amber-400 text-zinc-950 shadow-amber-500/20"
+                                    }`}
+                            >
+                                {isDownloading ? (
+                                    <>
+                                        <Activity className="w-4 h-4 animate-spin" />
+                                        Iniciando...
+                                    </>
+                                ) : isCached ? (
+                                    <>
+                                        <Zap className="w-4 h-4 fill-current" />
+                                        Añadir a Plex
+                                    </>
+                                ) : (
+                                    <>
+                                        <Download className="w-4 h-4" />
+                                        Descargar
+                                    </>
+                                )}
+                            </button>
                         </div>
-                        <button
-                            onClick={() => handleDownload(stream)}
-                            disabled={downloadingStreamId === (stream.url || stream.title)}
-                            className={`shrink-0 flex items-center gap-2 font-bold px-4 py-2.5 rounded-lg transition-all active:scale-95 shadow-lg ${downloadingStreamId === (stream.url || stream.title)
-                                ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
-                                : "bg-amber-500 hover:bg-amber-400 text-zinc-950 shadow-amber-500/20"
-                                }`}
-                        >
-                            {downloadingStreamId === (stream.url || stream.title) ? (
-                                <>
-                                    <Activity className="w-4 h-4 animate-spin" />
-                                    Añadiendo...
-                                </>
-                            ) : (
-                                <>
-                                    <Plus className="w-4 h-4" />
-                                    Añadir a Plex
-                                </>
-                            )}
-                        </button>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         );
     };

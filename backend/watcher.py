@@ -14,6 +14,80 @@ def log(msg: str, on_log: Optional[callable] = None):
         except Exception:
             pass
 
+def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", on_log: Optional[callable] = None) -> Optional[str]:
+    """
+    Busca un archivo en TorBox usando el nombre exacto del archivo.
+    Realiza una sola pasada de búsqueda.
+    """
+    expected_lower = expected_filename.lower()
+    
+    if not os.path.exists(mount_path):
+        log(f"[Watcher] El directorio de montaje no existe: {mount_path}", on_log)
+        return None
+
+    try:
+        raw_items = os.listdir(mount_path)
+    except Exception as e:
+        log(f"[Watcher] Error listando {mount_path}: {e}", on_log)
+        return None
+
+    # PASO 1: Archivo directo en la raíz
+    for item in raw_items:
+        if item.lower() == expected_lower:
+            item_path = os.path.join(mount_path, item)
+            if os.path.isfile(item_path):
+                log(f"[Watcher] ✓ Encontrado en raíz: {item}", on_log)
+                return item_path
+
+    # PASO 2: Buscar en subcarpetas
+    title_words = [w.lower() for w in re.split(r'[\s\.\-_]+', title) if len(w) >= 3] if title else []
+
+    def walk_for_exact(folder_path: str) -> Optional[str]:
+        expected_no_ext = os.path.splitext(expected_lower)[0]
+        try:
+            for root, dirs, files in os.walk(folder_path):
+                depth = root[len(folder_path):].count(os.sep)
+                if depth > 4:
+                    dirs.clear()
+                    continue
+                for f in files:
+                    f_lower = f.lower()
+                    if f_lower == expected_lower or os.path.splitext(f_lower)[0] == expected_no_ext:
+                        return os.path.join(root, f)
+        except Exception:
+            pass
+        return None
+
+    candidates = []
+    others = []
+    for item in raw_items:
+        item_path = os.path.join(mount_path, item)
+        if not os.path.isdir(item_path):
+            continue
+        item_l = item.lower()
+        if title_words and any(w in item_l for w in title_words):
+            candidates.append(item_path)
+        else:
+            others.append(item_path)
+
+    # Primero prioritarias
+    for folder in candidates:
+        result = walk_for_exact(folder)
+        if result:
+            return result
+
+    # Luego el resto
+    for folder in others:
+        result = walk_for_exact(folder)
+        if result:
+            return result
+
+    return None
+
+def check_file_exists(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox") -> Optional[str]:
+    """Versión sincrónica de una sola pasada para checking rápido."""
+    return find_file_path(expected_filename, title, mount_path)
+
 def watch_for_file(
     expected_filename: str,
     title: str = "",
@@ -28,115 +102,43 @@ def watch_for_file(
     on_log: Optional[callable] = None
 ) -> Optional[str]:
     """
-    Busca un archivo en TorBox usando ÚNICAMENTE el nombre exacto del archivo
-    provisto por AIOStreams (behaviorHints.filename).
+    Busca un archivo en TorBox usando el nombre exacto del archivo
+    provisto por AIOStreams (o extraído de la URL).
     """
     start_time = time.time()
-    expected_lower = expected_filename.lower()
-
     msg = f"Buscando archivo: '{expected_filename}'"
     log(f"[Watcher] {msg}", on_log)
     if on_status:
         on_status("Searching", msg)
 
-    def walk_for_exact(folder_path: str) -> Optional[str]:
-        """Busca el filename exacto dentro de una carpeta, hasta 4 niveles.
-        Soporta match con o sin extensión (por si el filename no trae .mkv)."""
-        expected_no_ext = os.path.splitext(expected_lower)[0]
-        try:
-            for root, dirs, files in os.walk(folder_path):
-                depth = root[len(folder_path):].count(os.sep)
-                if depth > 4:
-                    dirs.clear()
-                    continue
-                for f in files:
-                    f_lower = f.lower()
-                    # Match exacto (con extensión) O match sin extensión
-                    if f_lower == expected_lower or os.path.splitext(f_lower)[0] == expected_no_ext:
-                        return os.path.join(root, f)
-        except Exception as e:
-            log(f"[Watcher] Error recorriendo {folder_path}: {e}", on_log)
-        return None
-
     while time.time() - start_time < timeout_seconds:
-        # Verificación de cancelación/pausa
         if get_status:
             status = get_status()
             if status == "Cancelled":
-                log(f"[Watcher] Búsqueda cancelada por el usuario.", on_log)
+                log(f"[Watcher] Búsqueda cancelada.", on_log)
                 return None
             if status == "Paused":
                 time.sleep(5)
                 continue
 
-        # Esperamos entre ciclos para no saturar el API de rclone
         time.sleep(10)
-
         elapsed = int(time.time() - start_time)
-        log(f"[Watcher] Ciclo de búsqueda... ({elapsed}s transcurridos)", on_log)
+        log(f"[Watcher] Ciclo de búsqueda... ({elapsed}s)", on_log)
         if on_status:
             on_status("Searching", f"Buscando '{expected_filename}'... ({elapsed}s)")
 
-        # Forzar refresco de caché rclone para detectar archivos nuevos
         try:
             subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=3)
-            log(f"[Watcher] Caché rclone refrescado.", on_log)
         except Exception:
             pass
 
-        if not os.path.exists(mount_path):
-            log(f"[Watcher] El directorio de montaje no existe: {mount_path}", on_log)
-            continue
+        found_path = find_file_path(expected_filename, title, mount_path, on_log)
+        if found_path:
+            return found_path
 
-        try:
-            raw_items = os.listdir(mount_path)
-        except Exception as e:
-            log(f"[Watcher] Error listando {mount_path}: {e}", on_log)
-            time.sleep(5)
-            continue
+        log(f"[Watcher] Archivo no encontrado. Esperando...", on_log)
 
-        log(f"[Watcher] {len(raw_items)} items en TorBox. Buscando '{expected_filename}'...", on_log)
-
-        # PASO 1: Archivo directo en la raíz
-        for item in raw_items:
-            if item.lower() == expected_lower:
-                item_path = os.path.join(mount_path, item)
-                if os.path.isfile(item_path):
-                    log(f"[Watcher] ✓ Encontrado en raíz: {item}", on_log)
-                    return item_path
-
-        # PASO 2: Buscar en subcarpetas (primero las que coincidan con el título, luego el resto)
-        title_words = [w.lower() for w in re.split(r'[\s\.\-_]+', title) if len(w) >= 3] if title else []
-
-        candidates = []
-        others = []
-        for item in raw_items:
-            item_path = os.path.join(mount_path, item)
-            if not os.path.isdir(item_path):
-                continue
-            item_l = item.lower()
-            if title_words and any(w in item_l for w in title_words):
-                candidates.append(item_path)
-            else:
-                others.append(item_path)
-
-        log(f"[Watcher] Buscando en {len(candidates)} carpetas prioritarias + {len(others)} restantes...", on_log)
-
-        # Primero busca en carpetas que coincidan con el título (más rápido)
-        for folder in candidates:
-            result = walk_for_exact(folder)
-            if result:
-                log(f"[Watcher] ✓ Encontrado: {result}", on_log)
-                return result
-
-        # Luego en el resto (por si la carpeta tiene un nombre diferente)
-        for folder in others:
-            result = walk_for_exact(folder)
-            if result:
-                log(f"[Watcher] ✓ Encontrado (búsqueda completa): {result}", on_log)
-                return result
-
-        log(f"[Watcher] Archivo no encontrado en este ciclo. Esperando próxima descarga...", on_log)
+    return None
 
     log(f"[Watcher] Timeout: '{expected_filename}' no apareció en {timeout_seconds}s.", on_log)
     return None
