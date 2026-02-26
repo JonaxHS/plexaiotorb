@@ -673,7 +673,27 @@ export default function App() {
         setDownloadingStreamId(streamId);
 
         // Obtenemos el filename real que TorBox debería usar
-        const filenameEstimate = stream.behaviorHints?.filename || stream.title?.split('\n')[0] || `Unknown_${selectedItem.id}.mkv`;
+        // Extraer el filename real del stream:
+        // 1. Usar behaviorHints.filename si está disponible (lo más exacto)
+        // 2. Extraer de la URL (formato: .../hash/filename/0/filename)
+        // 3. Fallback genérico
+        let filenameEstimate = stream.behaviorHints?.filename;
+        if (!filenameEstimate && stream.url) {
+            // La URL de torrentio/AIOStreams contiene el filename al final: .../filename/0/filename
+            const urlParts = stream.url.split('/');
+            // Buscar último segmento que parezca un archivo de video
+            const videoExts = ['.mkv', '.mp4', '.avi', '.ts', '.webm'];
+            for (let i = urlParts.length - 1; i >= 0; i--) {
+                const seg = decodeURIComponent(urlParts[i]);
+                if (videoExts.some(ext => seg.toLowerCase().endsWith(ext))) {
+                    filenameEstimate = seg;
+                    break;
+                }
+            }
+        }
+        if (!filenameEstimate) {
+            filenameEstimate = `Unknown_${selectedItem?.id}.mkv`;
+        }
 
         addLog(`Contactando AIOStreams para detonar descarga en TorBox...`);
         // Detonamos la descarga simulando que un reproductor intenta acceder al stream

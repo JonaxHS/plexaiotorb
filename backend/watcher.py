@@ -40,7 +40,9 @@ def watch_for_file(
         on_status("Searching", msg)
 
     def walk_for_exact(folder_path: str) -> Optional[str]:
-        """Busca el filename exacto dentro de una carpeta, hasta 4 niveles."""
+        """Busca el filename exacto dentro de una carpeta, hasta 4 niveles.
+        Soporta match con o sin extensión (por si el filename no trae .mkv)."""
+        expected_no_ext = os.path.splitext(expected_lower)[0]
         try:
             for root, dirs, files in os.walk(folder_path):
                 depth = root[len(folder_path):].count(os.sep)
@@ -48,7 +50,9 @@ def watch_for_file(
                     dirs.clear()
                     continue
                 for f in files:
-                    if f.lower() == expected_lower:
+                    f_lower = f.lower()
+                    # Match exacto (con extensión) O match sin extensión
+                    if f_lower == expected_lower or os.path.splitext(f_lower)[0] == expected_no_ext:
                         return os.path.join(root, f)
         except Exception as e:
             log(f"[Watcher] Error recorriendo {folder_path}: {e}", on_log)
