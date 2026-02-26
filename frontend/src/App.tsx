@@ -633,21 +633,21 @@ export default function App() {
                 setStreams(fetchedStreams);
                 addLog(`${fetchedStreams.length} streams encontrados.`);
 
-                // Check cache for each stream
+                // Detectar caché por el indicador ⚡ en el nombre (AIOStreams marca con [TB⚡] los archivos en caché)
+                const cacheStatuses: Record<string, boolean> = {};
                 fetchedStreams.forEach((stream: any) => {
                     const id = stream.url || stream.title;
-                    const filename = getFilenameEstimate(stream);
-                    if (!filename) return;
-
-                    fetch(`${API_BASE}/torbox/check-cache`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ filename, title: selectedItem?.title || "" })
-                    }).then(r => r.json())
-                        .then(d => {
-                            setStreamCacheStatuses(prev => ({ ...prev, [id]: d.cached }));
-                        }).catch(() => { });
+                    const streamName = stream.name || "";
+                    
+                    // Si el nombre contiene ⚡ está en caché según AIOStreams
+                    if (streamName.includes("⚡") || streamName.includes("[TB⚡]")) {
+                        cacheStatuses[id] = true;
+                        addLog(`Stream en caché detectado: ${streamName.substring(0, 50)}...`);
+                    } else {
+                        cacheStatuses[id] = false;
+                    }
                 });
+                setStreamCacheStatuses(cacheStatuses);
             }
         } catch (err) {
             addLog(`Error al obtener streams: ${err}`);
