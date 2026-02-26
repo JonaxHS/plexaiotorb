@@ -215,13 +215,13 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
         
     return None
 
-def start_watcher_thread(expected_filename: str, title: str, year: str, callback, season_number: int = None, episode_number: int = None, on_status: Optional[callable] = None, get_status: Optional[callable] = None, original_title: str = ""):
+def start_watcher_thread(expected_filename: str, title: str, year: str, callback, season_number: int = None, episode_number: int = None, on_status: Optional[callable] = None, get_status: Optional[callable] = None, original_title: str = "", on_log: Optional[callable] = None):
     """
     Inicia la búsqueda en segundo plano y llama al callback con la ruta cuando lo encuentra.
     """
     def run_watch():
         log(f"[Watcher] Iniciando hilo para: {title} (S{season_number}E{episode_number})", on_log)
-        found_path = watch_for_file(expected_filename, title, year, season_number, episode_number, on_status=on_status, get_status=get_status, original_title=original_title)
+        found_path = watch_for_file(expected_filename, title, year, season_number, episode_number, on_status=on_status, get_status=get_status, original_title=original_title, on_log=on_log)
         if found_path:
             msg = f"Archivo encontrado: {os.path.basename(found_path)}"
             log(f"[Watcher] {msg}", on_log)
@@ -234,3 +234,4 @@ def start_watcher_thread(expected_filename: str, title: str, year: str, callback
     thread = threading.Thread(target=run_watch, daemon=True)
     thread.start()
     return thread
+
