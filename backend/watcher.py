@@ -100,36 +100,69 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
             continue
             
         # LÓGICA 0 (PRIORITARIA): Búsqueda por nombre exacto del archivo
-        # El filename que nos dio AIOStreams es el nombre real del archivo en TorBox.
-        # Buscamos exactamente ese nombre (insensible a mayúsculas) en todo el directorio.
+        # Usa el filename real de AIOStreams (el más exacto posible).
+        # Para evitar recorrer los 400+ items de TorBox, primero filtramos carpetas por título,
+        # luego buscamos el filename exacto dentro de solo esas carpetas candidatas.
         expected_lower = expected_filename.lower()
         found_exact = None
+        
+        # Obtener palabras clave del título para filtrar candidatos
+        title_words = [w.lower() for w in re.split(r'[\s\.\-_]+', title) if len(w) >= 3] if title else []
+        
+        def walk_for_exact(folder_path: str) -> str | None:
+            """Busca el filename exacto dentro de una carpeta, hasta 3 niveles."""
+            try:
+                for root, dirs, files in os.walk(folder_path):
+                    depth = root[len(folder_path):].count(os.sep)
+                    if depth > 3:
+                        dirs.clear()
+                        continue
+                    for f in files:
+                        if f.lower() == expected_lower:
+                            return os.path.join(root, f)
+            except Exception:
+                pass
+            return None
+        
+        # Paso 1: Archivo directo en raíz (el caso más rápido)
         for item in raw_items:
             item_path = os.path.join(mount_path, item)
-            # Archivo directo en raíz
             if os.path.isfile(item_path) and item.lower() == expected_lower:
-                log(f"[Watcher] ✓ Match exacto de filename en raíz: {item}", on_log)
+                log(f"[Watcher] ✓ Match exacto en raíz: {item}", on_log)
                 found_exact = item_path
                 break
-            # Buscar dentro de carpetas
-            if os.path.isdir(item_path):
-                try:
-                    for root, dirs, files in os.walk(item_path):
-                        depth = root[len(item_path):].count(os.sep)
-                        if depth > 3:
-                            dirs.clear()
-                            continue
-                        for f in files:
-                            if f.lower() == expected_lower and f.lower().endswith(VIDEO_EXTS):
-                                found_exact = os.path.join(root, f)
-                                log(f"[Watcher] ✓ Match exacto de filename: {found_exact}", on_log)
-                                break
-                        if found_exact:
+        
+        if not found_exact:
+            # Paso 2: Buscar en carpetas candidatas (solo las que coincidan con el título)
+            candidates = []
+            item_lower_map = {item: item.lower() for item in raw_items}
+            for item, item_l in item_lower_map.items():
+                item_path = os.path.join(mount_path, item)
+                if not os.path.isdir(item_path):
+                    continue
+                # Incluir si alguna palabra del título está en el nombre de la carpeta
+                if title_words and any(w in item_l for w in title_words):
+                    candidates.append(item_path)
+            
+            log(f"[Watcher] Buscando '{expected_filename}' en {len(candidates)} carpetas candidatas...", on_log)
+            for cand_path in candidates:
+                result = walk_for_exact(cand_path)
+                if result:
+                    found_exact = result
+                    log(f"[Watcher] ✓ Match exacto de filename: {found_exact}", on_log)
+                    break
+            
+            # Paso 3: Si no se encontró en candidatos, buscar en TODAS (fallback lento)
+            if not found_exact and not candidates:
+                log(f"[Watcher] Sin candidatos por título, buscando en todas las carpetas...", on_log)
+                for item in raw_items:
+                    item_path = os.path.join(mount_path, item)
+                    if os.path.isdir(item_path):
+                        result = walk_for_exact(item_path)
+                        if result:
+                            found_exact = result
+                            log(f"[Watcher] ✓ Match exacto (búsqueda completa): {found_exact}", on_log)
                             break
-                except Exception:
-                    pass
-            if found_exact:
-                break
         
         if found_exact:
             return found_exact
