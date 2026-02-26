@@ -546,14 +546,12 @@ def check_symlink_exists(req: SymlinkExistsRequest):
 
         if os.path.isdir(plex_dir):
             if req.media_type == "tv" and req.episode_number is not None:
-                # Buscar cualquier archivo que contenga SxxExx o xxExx o similar
-                ep_code = f"S{req.season_number:02d}E{req.episode_number:02d}"
-                alt_code = f"{req.season_number}x{req.episode_number:02d}" # 1x01 format
-                
+                from media_utils import extract_se_info
                 try:
                     files = os.listdir(plex_dir)
                     for f in files:
-                        if ep_code.lower() in f.lower() or alt_code.lower() in f.lower():
+                        f_s, f_e = extract_se_info(f)
+                        if f_s == req.season_number and f_e == req.episode_number:
                             return {"exists": True}
                 except: pass
                 return {"exists": False}

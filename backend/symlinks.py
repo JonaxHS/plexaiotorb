@@ -25,11 +25,10 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
     
     # Extraer la temporada real del nombre del archivo por si TorBox devolvió un archivo cruzado o un pack
     if media_type == "tv":
+        from media_utils import extract_se_info
         filename_for_regex = os.path.basename(source_file_path)
-        # Buscar patrones como S01E01, s1e4, S02, etc. o 1x01
-        match = re.search(r'[sS](\d+)[eE]\d+', filename_for_regex) or re.search(r'(?<!\d)(\d+)x\d+', filename_for_regex)
-        if match:
-            parsed_season = int(match.group(1))
+        parsed_season, _ = extract_se_info(filename_for_regex)
+        if parsed_season is not None:
             print(f"[Symlink] Detectada temporada real en el archivo ({parsed_season}) (Reemplaza la UI: {season_number})")
             season_number = parsed_season
     
