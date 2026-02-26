@@ -81,7 +81,6 @@ class SetupRequest(BaseModel):
     aiostreams_url: str
     torbox_email: str
     torbox_password: str
-    plex_claim: str
     plex_server_name: str
 
 class ManualLinkRequest(BaseModel):
@@ -137,11 +136,6 @@ def run_setup(req: SetupRequest):
     
     # Update global config references specifically for TMDB and AIO URL in main
     # Alternatively we read them inside the endpoints. Let's make sure endpoints read `config_module.config` directly.
-
-    # 2. Crear .env para Plex
-    with open(".env", "w", encoding="utf-8") as f:
-        # Avoid duplicating PLEX_CLAIM if it exists, for simplicity over-write
-        f.write(f"PLEX_CLAIM={req.plex_claim}\n")
 
     # 3. Crear rclone.conf
     obscured = obscure_password(req.torbox_password)

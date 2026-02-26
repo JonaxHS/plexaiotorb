@@ -59,7 +59,6 @@ export default function App() {
         aiostreams_url: "http://localhost:XXXX",
         torbox_email: "",
         torbox_password: "",
-        plex_claim: "",
         plex_server_name: "PlexAioTorb"
     });
     const [setupStep, setSetupStep] = useState(1);
@@ -830,14 +829,10 @@ export default function App() {
                         {setupStep === 3 && (
                             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
                                 <h2 className="text-lg font-medium text-amber-400">3. Plex Media Server</h2>
-                                <p className="text-xs text-zinc-500">Obtén un claim token (dura 4 minutos) en: plex.tv/claim para asociar el servidor Docker invisible a tu cuenta.</p>
+                                <p className="text-xs text-zinc-500">Configura el nombre de tu servidor Plex. Podrás reclamarlo directamente entrando a {`http://${HOST}:32400/web`} después de iniciar.</p>
                                 <div>
                                     <label className="block text-sm text-zinc-400 mb-1">Nombre del Servidor Plex</label>
                                     <input type="text" value={setupData.plex_server_name} onChange={e => setSetupData({ ...setupData, plex_server_name: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 focus:ring-2 focus:ring-amber-500/50 outline-none" placeholder="Ej. Mi Servidor Plex" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-zinc-400 mb-1">Plex Claim Token</label>
-                                    <input type="text" value={setupData.plex_claim} onChange={e => setSetupData({ ...setupData, plex_claim: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 focus:ring-2 focus:ring-amber-500/50 outline-none" placeholder="claim-xxxxx" />
                                 </div>
 
                                 {setupMessage ? (

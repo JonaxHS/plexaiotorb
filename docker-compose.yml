@@ -51,8 +51,6 @@ services:
       - /dev/fuse
     security_opt:
       - apparmor:unconfined
-    env_file:
-      - ./backend/.env
     ports:
       - "32400:32400"
     restart: unless-stopped
