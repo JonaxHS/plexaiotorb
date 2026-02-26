@@ -90,7 +90,43 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
             time.sleep(5)
             continue
             
-        # LOGICA A: Coincidencia textual pura en primer nivel
+        # LÓGICA 0 (PRIORITARIA): Búsqueda por nombre exacto del archivo
+        # El filename que nos dio AIOStreams es el nombre real del archivo en TorBox.
+        # Buscamos exactamente ese nombre (insensible a mayúsculas) en todo el directorio.
+        expected_lower = expected_filename.lower()
+        found_exact = None
+        for item in raw_items:
+            item_path = os.path.join(mount_path, item)
+            # Archivo directo en raíz
+            if os.path.isfile(item_path) and item.lower() == expected_lower:
+                print(f"[Watcher] ✓ Match exacto de filename en raíz: {item}", flush=True)
+                found_exact = item_path
+                break
+            # Buscar dentro de carpetas
+            if os.path.isdir(item_path):
+                try:
+                    for root, dirs, files in os.walk(item_path):
+                        depth = root[len(item_path):].count(os.sep)
+                        if depth > 3:
+                            dirs.clear()
+                            continue
+                        for f in files:
+                            if f.lower() == expected_lower and f.lower().endswith(VIDEO_EXTS):
+                                found_exact = os.path.join(root, f)
+                                print(f"[Watcher] ✓ Match exacto de filename: {found_exact}", flush=True)
+                                break
+                        if found_exact:
+                            break
+                except Exception:
+                    pass
+            if found_exact:
+                break
+        
+        if found_exact:
+            return found_exact
+            
+        # LOGICA A: Coincidencia textual pura en primer nivel (fallback)
+        print(f"[Watcher] Filename exacto no encontrado, usando matching heurístico...", flush=True)
         for item, mtime in current_state.items():
             item_path = os.path.join(mount_path, item)
             
