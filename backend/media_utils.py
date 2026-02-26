@@ -38,6 +38,11 @@ def extract_se_info(text: str):
     if match:
         return int(match.group(1)), int(match.group(2))
 
+    # 3.5. Formato [D1.Ep1], [S1.Ep1], etc. (usado por algunos trackers)
+    match = re.search(r'\[(?:D|S)(\d+)\.Ep(\d+)\]', text, re.I)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+
     # 4. Formato Temporada 1 Capitulo 1 (Soporta Inglés y Español)
     t_match = re.search(r'(?:Temporada|Season|Series)\s*(\d+)', text, re.I)
     c_match = re.search(r'(?:Capitulo|Episodio|Episode|Ep)\s*(\d+)', text, re.I)
