@@ -74,10 +74,11 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
         if n_s is not None:
             return 0
             
-    # 2. Validación estricta de Año (Sólo para películas)
+    # 2. Validación estricta de Año
     str_year = str(year).strip() if year else ""
-    if str_year and season is None:
+    if str_year:
         years_in_name = re.findall(r'\b(19\d{2}|20\d{2})\b', name)
+        # Si encuentra años en el archivo y NINGUNO es el esperado, entonces es el objeto equivocado
         if years_in_name and str_year not in years_in_name:
             return 0
             
@@ -86,10 +87,19 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
     t_clean = clean_name(title)
     o_clean = clean_name(original_title) if original_title else ""
     
+    # Match exacto es imbatible
     if e_clean and n_clean == e_clean: return 100
     if t_clean and n_clean == t_clean: return 95
     if o_clean and n_clean == o_clean: return 95
     
+    # EVITAR: "Ted" matching "Ted 2" si "2" no está en el título solicitado
+    if t_clean and len(t_clean) <= 4:
+        # Si el nombre del archivo tiene un número justo después del título que no está en el título
+        if n_clean.startswith(t_clean) and len(n_clean) > len(t_clean):
+            next_char = n_clean[len(t_clean)]
+            if next_char.isdigit() and next_char not in t_clean:
+                return 0
+
     score = 0
     n_words = set(clean_words(name))
     t_words = set(get_key_words(clean_words(title)))
@@ -117,6 +127,9 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
         score += 40
     elif season is not None and n_s == season:
         score += 20
+        # Si buscamos episodio pero el archivo no tiene episodio (y no es carpeta)
+        if episode is not None and n_e is None and "." in name:
+             score -= 30
 
     # Penalizaciones
     if "sample" in n_clean or "trailer" in n_clean or "extra" in n_clean:
@@ -127,7 +140,6 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
     has_any_title_hint = (len(matched_t) > 0) or (len(matched_o) > 0) or (e_clean and (e_clean in n_clean or n_clean in e_clean))
     
     if not has_any_title_hint:
-        # CASO ESPECIAL: Si es un match exacto de ID (pero aquí no tenemos ID) o si el score es bajísimo
         return 0
 
     return min(100, max(0, int(score)))
