@@ -532,6 +532,82 @@ export default function App() {
         }
     };
 
+    const deleteEntireSeason = async (seasonNumber: number) => {
+        if (!confirm(`¿Eliminar TODA la temporada ${seasonNumber}? Esta acción no se puede deshacer.`)) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/library/delete-season`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    media_type: libStructItem?.media_type, 
+                    folder_name: libStructItem?.name,
+                    season_number: seasonNumber
+                })
+            });
+            if (res.ok) {
+                addLog(`Temporada ${seasonNumber} eliminada completamente`);
+                addGlobalNotification(`Temporada ${seasonNumber} eliminada`, 'success');
+                if (libStructItem) {
+                    openLibraryStructure(libStructItem, libStructItem.media_type);
+                }
+            } else {
+                alert("Error eliminando la temporada.");
+            }
+        } catch (err) {
+            alert(`Error de red: ${err}`);
+        }
+    };
+
+    const deleteEntireSeries = async () => {
+        if (!confirm(`¿Eliminar TODA la serie "${libStructItem?.name}"? Esta acción no se puede deshacer.`)) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/library/delete-entire-series`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    media_type: libStructItem?.media_type,
+                    folder_name: libStructItem?.name
+                })
+            });
+            if (res.ok) {
+                addLog(`Serie ${libStructItem?.name} eliminada completamente`);
+                addGlobalNotification(`Serie eliminada`, 'success');
+                setShowLibStruct(false);
+                setLibStructItem(null);
+            } else {
+                alert("Error eliminando la serie.");
+            }
+        } catch (err) {
+            alert(`Error de red: ${err}`);
+        }
+    };
+
+    const deleteEntireMovie = async () => {
+        if (!confirm(`¿Eliminar la película "${libStructItem?.name}"? Esta acción no se puede deshacer.`)) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/library/delete-entire-movie`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    folder_name: libStructItem?.name
+                })
+            });
+            if (res.ok) {
+                addLog(`Película ${libStructItem?.name} eliminada completamente`);
+                addGlobalNotification(`Película eliminada`, 'success');
+                setShowLibStruct(false);
+                setLibStructItem(null);
+            } else {
+                alert("Error eliminando la película.");
+            }
+        } catch (err) {
+            alert(`Error de red: ${err}`);
+        }
+    };
+
     const getSymlinkInfo = async (fullPath: string) => {
         try {
             const res = await fetch(`${API_BASE}/library/symlink_info`, {
@@ -1797,6 +1873,49 @@ export default function App() {
                                             <Plus className="w-4 h-4" /> Agregar Episodios
                                         </button>
                                     )}
+                                    
+                                    {/* Botones de eliminación en masa */}
+                                    <div className="flex items-center gap-2">
+                                        {libStructItem.media_type === 'tv' ? (
+                                            // Opciones para series
+                                            <>
+                                                <div className="relative group">
+                                                    <button className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold rounded-xl text-xs border border-red-500/30 transition-all flex items-center gap-2">
+                                                        <Trash2 className="w-3 h-3" /> Borrar...
+                                                    </button>
+                                                    <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-800 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                                                        <div className="p-3 space-y-2">
+                                                            {libStructDetails.seasons?.map((season: any) => (
+                                                                <button
+                                                                    key={season.season_number}
+                                                                    onClick={() => deleteEntireSeason(season.season_number)}
+                                                                    className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                                                                >
+                                                                    Borrar Temporada {season.season_number}
+                                                                </button>
+                                                            ))}
+                                                            <div className="border-t border-zinc-800 my-2"></div>
+                                                            <button
+                                                                onClick={() => deleteEntireSeries()}
+                                                                className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-500/20 font-bold rounded transition-colors"
+                                                            >
+                                                                🔥 Borrar Serie Completa
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            // Opción para películas
+                                            <button
+                                                onClick={() => deleteEntireMovie()}
+                                                className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold rounded-xl text-xs border border-red-500/30 transition-all flex items-center gap-2"
+                                            >
+                                                <Trash2 className="w-3 h-3" /> Borrar Película
+                                            </button>
+                                        )}
+                                    </div>
+                                    
                                     <button
                                         onClick={() => setShowLibStruct(false)}
                                         className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
