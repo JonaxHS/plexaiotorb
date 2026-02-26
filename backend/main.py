@@ -15,12 +15,26 @@ from health import start_health_monitor
 
 app = FastAPI(title="PlexAioTorb Backend")
 notification_queue = [] # Cola simple para avisos al frontend
+job_logs: dict = {}      # Logs detallados por trabajo: {job_id: [str]}
+MAX_JOB_LOGS = 500       # Max líneas de log por trabajo
 
 # --- Persistencia de Trabajos ---
 JOBS_FILE = os.path.join(os.path.dirname(config_module.config.get("config_path", "/app/config/config.yaml")), "active_jobs.json")
 active_jobs = {}      # Seguimiento de procesos en curso
 
 import json
+
+def append_job_log(job_id: str, msg: str):
+    """Agrega una línea de log a la cola del trabajo."""
+    from datetime import datetime
+    if job_id not in job_logs:
+        job_logs[job_id] = []
+    ts = datetime.now().strftime("%H:%M:%S")
+    job_logs[job_id].append(f"[{ts}] {msg}")
+    # Mantener log circular para no usar demasiada RAM
+    if len(job_logs[job_id]) > MAX_JOB_LOGS:
+        job_logs[job_id] = job_logs[job_id][-MAX_JOB_LOGS:]
+
 def save_jobs():
     try:
         with open(JOBS_FILE, 'w') as f:
@@ -647,6 +661,8 @@ def initiate_download_process(req: DownloadRequest, job_id: str):
             active_jobs[job_id]["status"] = status
             active_jobs[job_id]["message"] = message
             save_jobs()
+            # También lo guardamos en el log detallado
+            append_job_log(job_id, f"[STATUS] {status}: {message}")
 
     def on_found(path: str, season_number: int = None):
         on_status_update("Linking", "Creando Symlink...")
@@ -673,6 +689,11 @@ def initiate_download_process(req: DownloadRequest, job_id: str):
         # Eliminar tras 60 segundos del tracker (más tiempo para que el usuario lo vea)
         threading.Timer(60.0, lambda: (active_jobs.pop(job_id, None), save_jobs())).start()
         
+    # Escribir log de inicio
+    append_job_log(job_id, f"Iniciando búsqueda: {req.title} ({req.year}) - {req.filename}")
+    if req.season_number:
+        append_job_log(job_id, f"Buscando S{req.season_number:02d}E{(req.episode_number or 0):02d}")
+    
     start_watcher_thread(
         expected_filename=req.filename, 
         title=req.title, 
@@ -682,6 +703,7 @@ def initiate_download_process(req: DownloadRequest, job_id: str):
         season_number=req.season_number,
         episode_number=req.episode_number,
         on_status=on_status_update,
+        on_log=lambda msg: append_job_log(job_id, msg),
         get_status=lambda: active_jobs.get(job_id, {}).get("status")
     )
     return {"status": "ok", "message": f"Observando descarga de {req.filename}", "job_id": job_id}
@@ -693,10 +715,16 @@ def delete_job(job_id: str):
         active_jobs[job_id]["status"] = "Cancelled"
         save_jobs()
         # Dar tiempo al hilo para que lo lea antes de sacarlo de la lista
-        import time 
         threading.Timer(2.0, lambda: (active_jobs.pop(job_id, None), save_jobs())).start()
         return {"status": "ok"}
     raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+
+@app.get("/api/jobs/{job_id}/logs")
+def get_job_logs(job_id: str, since: int = 0):
+    """Devuelve logs detallados de un trabajo específico desde la línea `since`."""
+    logs = job_logs.get(job_id, [])
+    return {"logs": logs[since:], "total": len(logs)}
+
 
 @app.post("/api/downloads/{job_id}/pause")
 def pause_job(job_id: str):

@@ -7,7 +7,16 @@ import time
 import threading
 from typing import Optional
 
-def watch_for_file(expected_filename: str, title: str = "", year: str = "", season: int = None, episode: int = None, mount_path: str = "/mnt/torbox", timeout_seconds: int = 3600, on_status: Optional[callable] = None, get_status: Optional[callable] = None, original_title: str = "") -> Optional[str]:
+def log(msg: str, on_log: Optional[callable] = None):
+    """Escribe en stdout y en la cola de logs del frontend si está disponible."""
+    print(msg, flush=True)
+    if on_log:
+        try:
+            on_log(msg)
+        except Exception:
+            pass
+
+def watch_for_file(expected_filename: str, title: str = "", year: str = "", season: int = None, episode: int = None, mount_path: str = "/mnt/torbox", timeout_seconds: int = 3600, on_status: Optional[callable] = None, get_status: Optional[callable] = None, original_title: str = "", on_log: Optional[callable] = None) -> Optional[str]:
     """
     Busca un archivo específico dentro del montaje de rclone (TorBox).
     """
@@ -16,7 +25,7 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
     if season is not None:
         msg = f"Buscando {title} S{season}E{episode}..."
     
-    print(f"[Watcher] {msg}")
+    log(f"[Watcher] {msg}", on_log)
     if on_status: on_status("Searching", msg)
     
     expected_base = os.path.splitext(expected_filename)[0]
@@ -30,7 +39,7 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
                 path = os.path.join(mount_path, item)
                 initial_state[item] = os.path.getmtime(path)
         except Exception as e:
-            print(f"[Watcher] Error listando directorio inicial: {e}")
+            log(f"[Watcher] Error listando directorio inicial: {e}", on_log)
                 
     VIDEO_EXTS = ('.mkv', '.mp4', '.avi', '.ts', '.webm')
     
@@ -39,7 +48,7 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
         if get_status:
             status = get_status()
             if status == "Cancelled":
-                print(f"[Watcher] Abortando búsqueda: {title} (Cancelada por usuario)")
+                log(f"[Watcher] Abortando búsqueda: {title} (Cancelada por usuario)", on_log)
                 return None
             if status == "Paused":
                 time.sleep(5)
@@ -50,14 +59,14 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
         
         # Log de latido (heartbeat) para la interfaz web (evita que parezca congelado)
         elapsed = int(time.time() - start_time)
-        print(f"[Watcher] Monitoreando activamente TorBox... ({elapsed}s transcurridos)")
+        log(f"[Watcher] Monitoreando activamente TorBox... ({elapsed}s transcurridos)", on_log)
         if on_status: on_status("Searching", f"Buscando... ({elapsed}s)")
         
         # Forzar limpieza de cache en rclone para detectar nuevas carpetas casi en tiempo real
         if elapsed % 10 == 0:
             try:
                 import subprocess
-                print(f"[Watcher] Forzando refresco de cache rclone...")
+                log(f"[Watcher] Forzando refresco de cache rclone...", on_log)
                 subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=3)
             except Exception:
                 pass
@@ -71,13 +80,13 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
             
             # Dump periódico completo para debugging profundo (cada 1 minuto aprox)
             if elapsed % 60 == 0:
-                print(f"[Watcher Debug] DUMP completo de {mount_path} ({len(raw_items)} items): {raw_items[:20]}...", flush=True)
+                log(f"[Watcher Debug] DUMP completo de {mount_path} ({len(raw_items)} items): {raw_items[:20]}...", on_log)
                 if any("thrones" in x.lower() for x in raw_items):
-                    print(f"[Watcher Debug] !!! GoT ENCONTRADO en listdir !!!", flush=True)
+                    log(f"[Watcher Debug] !!! GoT ENCONTRADO en listdir !!!", on_log)
                 else:
-                    print(f"[Watcher Debug] ??? GoT NO esta en listdir ???", flush=True)
+                    log(f"[Watcher Debug] ??? GoT NO esta en listdir ???", on_log)
 
-            print(f"[Watcher] Listados {len(raw_items)} items en {mount_path}", flush=True)
+            log(f"[Watcher] Listados {len(raw_items)} items en {mount_path}", on_log)
             for item in raw_items:
                 try:
                     path = os.path.join(mount_path, item)
@@ -86,7 +95,7 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
                     # Si falla mtime (ej. archivo desaparece), usamos epoch 0 para forzar revisión textual
                     current_state[item] = 0
         except Exception as e:
-            print(f"[Watcher] Error listando directorio (posible rate limit): {e}")
+            log(f"[Watcher] Error listando directorio (posible rate limit): {e}", on_log)
             time.sleep(5)
             continue
             
@@ -99,7 +108,7 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
             item_path = os.path.join(mount_path, item)
             # Archivo directo en raíz
             if os.path.isfile(item_path) and item.lower() == expected_lower:
-                print(f"[Watcher] ✓ Match exacto de filename en raíz: {item}", flush=True)
+                log(f"[Watcher] ✓ Match exacto de filename en raíz: {item}", on_log)
                 found_exact = item_path
                 break
             # Buscar dentro de carpetas
@@ -113,7 +122,7 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
                         for f in files:
                             if f.lower() == expected_lower and f.lower().endswith(VIDEO_EXTS):
                                 found_exact = os.path.join(root, f)
-                                print(f"[Watcher] ✓ Match exacto de filename: {found_exact}", flush=True)
+                                log(f"[Watcher] ✓ Match exacto de filename: {found_exact}", on_log)
                                 break
                         if found_exact:
                             break
@@ -126,18 +135,18 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
             return found_exact
             
         # LOGICA A: Coincidencia textual pura en primer nivel (fallback)
-        print(f"[Watcher] Filename exacto no encontrado, usando matching heurístico...", flush=True)
+        log(f"[Watcher] Filename exacto no encontrado, usando matching heurístico...", on_log)
         for item, mtime in current_state.items():
             item_path = os.path.join(mount_path, item)
             
             if is_valid_match(item, expected_filename, title, year, season, episode, original_title=original_title):
-                print(f"[Watcher] Coincidencia detected: {item}", flush=True)
+                log(f"[Watcher] Coincidencia detected: {item}", on_log)
                 if os.path.isfile(item_path) and item.lower().endswith(VIDEO_EXTS):
-                    print(f"[Watcher] Coincidencia validada: {item}")
+                    log(f"[Watcher] Coincidencia validada: {item}", on_log)
                     return item_path
                 elif os.path.isdir(item_path):
                     # Búsqueda profunda en carpeta (soporta subcarpetas ej. Season 1/Ep 1)
-                    print(f"[Watcher Debug] Entrando a carpeta validada: {item}")
+                    log(f"[Watcher Debug] Entrando a carpeta validada: {item}", on_log)
                     try:
                         best_sub = None
                         best_score = -1
@@ -150,18 +159,18 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
                             for file in files:
                                 if file.lower().endswith(VIDEO_EXTS):
                                     score = get_match_score(file, expected_filename, title, year, season, episode, original_title=original_title)
-                                    print(f"[Watcher Debug]   - Evaluando sub-archivo: {file} | Score: {score}")
+                                    log(f"[Watcher Debug]   - Evaluando sub-archivo: {file} | Score: {score}", on_log)
                                     if score > best_score:
                                         best_score = score
                                         best_sub = os.path.relpath(os.path.join(root, file), item_path)
                         
                         if best_sub and best_score >= 30:
-                            print(f"[Watcher Debug]   - Éxito! Mejor sub-archivo: {best_sub} ({best_score}%)")
+                            log(f"[Watcher Debug]   - Éxito! Mejor sub-archivo: {best_sub} ({best_score}%)", on_log)
                             return os.path.join(item_path, best_sub)
                         else:
-                            print(f"[Watcher Debug]   - No se encontró un sub-archivo confiable en {item} (Best: {best_score})")
+                            log(f"[Watcher Debug]   - No se encontró un sub-archivo confiable en {item} (Best: {best_score})", on_log)
                     except Exception as e: 
-                        print(f"[Watcher Debug] Error listando subdir {item}: {e}")
+                        log(f"[Watcher Debug] Error listando subdir {item}: {e}", on_log)
                 
         # LOGICA B: Detectar cambios mediante análisis de Tiempo de Modificación (mtime)
         for item, current_mtime in current_state.items():
@@ -173,12 +182,12 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
                 # 1. Si es un archivo directo de video
                 if os.path.isfile(item_path) and item.lower().endswith(VIDEO_EXTS):
                     if is_valid_match(item, expected_filename, title, year, season, episode):
-                        print(f"[Watcher] Archivo NUEVO validado: {item}", flush=True)
+                        log(f"[Watcher] Archivo NUEVO validado: {item}", on_log)
                         return item_path
                     
                 # 2. Si es una carpeta nueva o modificada
                 if os.path.isdir(item_path) and is_valid_match(item, expected_filename, title, year, season, episode):
-                    print(f"[Watcher] Carpeta NUEVA/MODIFICADA validada: {item}", flush=True)
+                    log(f"[Watcher] Carpeta NUEVA/MODIFICADA validada: {item}", on_log)
                     try:
                         best_sub = None
                         best_score = -1
@@ -196,7 +205,7 @@ def watch_for_file(expected_filename: str, title: str = "", year: str = "", seas
                                         best_sub = os.path.relpath(os.path.join(root, file), item_path)
                         
                         if best_sub and best_score >= 30:
-                            print(f"[Watcher] Mejor video en carpeta: {best_sub} (Score: {best_score})", flush=True)
+                            log(f"[Watcher] Mejor video en carpeta: {best_sub} (Score: {best_score})", on_log)
                             return os.path.join(item_path, best_sub)
                     except Exception:
                         pass
@@ -211,15 +220,15 @@ def start_watcher_thread(expected_filename: str, title: str, year: str, callback
     Inicia la búsqueda en segundo plano y llama al callback con la ruta cuando lo encuentra.
     """
     def run_watch():
-        print(f"[Watcher] Iniciando hilo para: {title} (S{season_number}E{episode_number})")
+        log(f"[Watcher] Iniciando hilo para: {title} (S{season_number}E{episode_number})", on_log)
         found_path = watch_for_file(expected_filename, title, year, season_number, episode_number, on_status=on_status, get_status=get_status, original_title=original_title)
         if found_path:
             msg = f"Archivo encontrado: {os.path.basename(found_path)}"
-            print(f"[Watcher] {msg}")
+            log(f"[Watcher] {msg}", on_log)
             if on_status: on_status("Found", msg)
             callback(found_path, season_number)
         else:
-            print(f"Timeout: No se encontró {title} S{season_number}E{episode_number}")
+            log(f"Timeout: No se encontró {title} S{season_number}E{episode_number}", on_log)
             if on_status: on_status("Error", "No se encontró el archivo (Timeout)")
             
     thread = threading.Thread(target=run_watch, daemon=True)

@@ -100,6 +100,10 @@ export default function App() {
     const [browsingJob, setBrowsingJob] = useState<any>(null);
     const [activeLogTab, setActiveLogTab] = useState<'backend' | 'rclone' | 'local'>('backend');
     const logsEndRef = useRef<HTMLDivElement>(null);
+    const [jobLogs, setJobLogs] = useState<Record<string, string[]>>({});    // Per-job logs
+    const [expandedJobLog, setExpandedJobLog] = useState<string | null>(null); // Currently expanded job
+    const jobLogSinceRef = useRef<Record<string, number>>({});               // Cursor per job
+    const jobLogsEndRef = useRef<HTMLDivElement>(null);
 
     // -- Live Settings State --
     const [settingsForm, setSettingsForm] = useState({ tmdb_api_key: '', aiostreams_url: '' });
@@ -145,10 +149,23 @@ export default function App() {
         if (setupMode || checkingStatus) return;
         const interval = setInterval(() => {
             fetch(`${API_BASE}/logs`)
-                .then(r => r.json())
-                .then(d => {
+                .then(r => r.json()).then(d => {
                     if (d.logs) setGlobalLogs(d.logs);
                 }).catch(() => { });
+
+            // Poll per-job logs for all active (non-completed, non-errored) jobs
+            Object.entries(activeDownloads).forEach(([id, job]: [string, any]) => {
+                if (job.status === 'Completed' || job.status === 'Error' || job.status === 'Cancelled') return;
+                const since = jobLogSinceRef.current[id] || 0;
+                fetch(`${API_BASE}/jobs/${id}/logs?since=${since}`)
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.logs && d.logs.length > 0) {
+                            setJobLogs(prev => ({ ...prev, [id]: [...(prev[id] || []), ...d.logs] }));
+                            jobLogSinceRef.current[id] = d.total;
+                        }
+                    }).catch(() => { });
+            });
 
             fetch(`${API_BASE}/rclone/status`)
                 .then(r => r.json())
@@ -1191,6 +1208,45 @@ export default function App() {
                                                                         }`}
                                                                 />
                                                             </div>
+                                                            {/* Log terminal expandible */}
+                                                            {(() => {
+                                                                const isExpanded = expandedJobLog === id;
+                                                                const logs = jobLogs[id] || [];
+                                                                return (
+                                                                    <div className="mt-3">
+                                                                        <button
+                                                                            onClick={() => setExpandedJobLog(isExpanded ? null : id)}
+                                                                            className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest text-zinc-600 hover:text-amber-500 transition-colors py-1"
+                                                                        >
+                                                                            <span className="flex items-center gap-1.5">
+                                                                                <span className="font-mono">&gt;_</span>
+                                                                                Logs del Watcher
+                                                                                {logs.length > 0 && <span className="bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded text-[9px] font-bold">{logs.length}</span>}
+                                                                            </span>
+                                                                            <span>{isExpanded ? '▲' : '▼'}</span>
+                                                                        </button>
+                                                                        {isExpanded && (
+                                                                            <div className="mt-2 bg-zinc-950 border border-zinc-800 rounded-xl p-3 max-h-64 overflow-y-auto font-mono text-[10px] leading-relaxed">
+                                                                                {logs.length === 0 ? (
+                                                                                    <p className="text-zinc-600 italic">Esperando logs...</p>
+                                                                                ) : (
+                                                                                    logs.map((line, i) => (
+                                                                                        <div key={i} className={`
+                                                                                            ${line.includes('ERROR') || line.includes('Error') ? 'text-red-400' : ''}
+                                                                                            ${line.includes('✓') || line.includes('Éxito') || line.includes('Completado') ? 'text-green-400' : ''}
+                                                                                            ${!line.includes('ERROR') && !line.includes('✓') && !line.includes('Éxito') && !line.includes('Completado') ? 'text-zinc-400' : ''}
+                                                                                            ${line.includes('Debug') ? 'text-zinc-600' : ''}
+                                                                                        `}>
+                                                                                            {line}
+                                                                                        </div>
+                                                                                    ))
+                                                                                )}
+                                                                                <div ref={jobLogsEndRef} />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </div>
 
