@@ -682,6 +682,24 @@ export default function App() {
         }
     }
 
+    const handleOpenManualLink = (season?: number, episode?: number) => {
+        const jobId = `${selectedItem.id}_${season || 0}_${episode || 0}`;
+        setBrowsingJob({
+            media_type: selectedItem.media_type,
+            title: selectedItem.title,
+            year: selectedItem.year,
+            season: season,
+            episode: episode,
+            job_id: jobId,
+            req: {
+                tmdb_id: selectedItem.id,
+                year: selectedItem.year
+            }
+        });
+        setShowTorBoxBrowser(true);
+        addLog(`Abriendo explorador de TorBox para vínculo manual: ${selectedItem.title}${season ? ` S${season}E${episode}` : ''}`);
+    };
+
     const handleActorClick = async (personId: number) => {
         setPersonDetailsLoading(true);
         setSelectedPerson(null);
@@ -1410,6 +1428,14 @@ export default function App() {
                                                     <Film className="w-4 h-4" /> No Descargado
                                                 </span>
                                             )}
+                                            <button
+                                                onClick={() => handleOpenManualLink()}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-amber-500 border border-zinc-700 transition-colors cursor-pointer group"
+                                                title="Vincular archivo manualmente desde TorBox"
+                                            >
+                                                <LinkIcon className="w-4 h-4 group-hover:scale-110 transition-transform" /> Vincular Manual
+                                            </button>
+
                                             {mediaDetails?.vote_average > 0 && (
                                                 <span className="text-amber-500 flex items-center gap-1">★ {mediaDetails.vote_average}</span>
                                             )}
@@ -1538,6 +1564,13 @@ export default function App() {
                                                                         {episodeSyncStatus[ep.episode_number] === 'synced' && (
                                                                             <span className="text-[9px] font-black text-green-500 uppercase tracking-widest bg-green-500/10 px-1.5 py-0.5 rounded border border-green-500/20">En Plex</span>
                                                                         )}
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); handleOpenManualLink(selectedSeason, ep.episode_number); }}
+                                                                            className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-amber-500 transition-colors border border-zinc-700/50"
+                                                                            title="Vincular manualmente"
+                                                                        >
+                                                                            <LinkIcon className="w-3 h-3" />
+                                                                        </button>
                                                                     </div>
                                                                     <p className="text-xs text-zinc-500 mt-1 line-clamp-1">{ep.overview || "Sin descripción."}</p>
                                                                 </div>
