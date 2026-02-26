@@ -1876,7 +1876,7 @@ export default function App() {
                                     
                                     {/* Botones de eliminación en masa */}
                                     <div className="flex items-center gap-2">
-                                        {libStructItem.media_type === 'tv' ? (
+                                        {libStructItem.media_type === 'tv' && libStructDetails ? (
                                             // Opciones para series
                                             <>
                                                 <div className="relative group">
@@ -1885,7 +1885,7 @@ export default function App() {
                                                     </button>
                                                     <div className="absolute right-0 top-full mt-1 w-56 bg-zinc-900 border border-zinc-800 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
                                                         <div className="p-3 space-y-2">
-                                                            {libStructDetails.seasons?.map((season: any) => (
+                                                            {libStructDetails?.seasons?.map((season: any) => (
                                                                 <button
                                                                     key={season.season_number}
                                                                     onClick={() => deleteEntireSeason(season.season_number)}
@@ -1905,7 +1905,7 @@ export default function App() {
                                                     </div>
                                                 </div>
                                             </>
-                                        ) : (
+                                        ) : libStructItem.media_type === 'movie' ? (
                                             // Opción para películas
                                             <button
                                                 onClick={() => deleteEntireMovie()}
@@ -1913,7 +1913,7 @@ export default function App() {
                                             >
                                                 <Trash2 className="w-3 h-3" /> Borrar Película
                                             </button>
-                                        )}
+                                        ) : null}
                                     </div>
                                     
                                     <button
