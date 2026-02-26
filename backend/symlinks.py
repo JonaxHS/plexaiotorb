@@ -39,8 +39,29 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
         os.makedirs(target_dir, exist_ok=True)
         print(f"Directorio Plex creado o verificado: {target_dir}")
         
-        # El nombre del archivo symlink usará el nombre original del archivo fuente
-        filename = os.path.basename(source_file_path)
+        # Extraer la extensión del archivo original
+        _, file_ext = os.path.splitext(source_file_path)
+        
+        # Crear el nombre del archivo según el formato de Plex
+        if media_type == "movie":
+            # Para películas: Título (Año).ext
+            filename = f"{clean_name} ({year}){file_ext}"
+        else:
+            # Para series: extraer episodio del archivo original
+            from media_utils import extract_se_info
+            original_filename = os.path.basename(source_file_path)
+            parsed_season, parsed_episode = extract_se_info(original_filename)
+            
+            if parsed_season and parsed_episode:
+                # Formato: S01E01.ext
+                filename = f"S{parsed_season:02d}E{parsed_episode:02d}{file_ext}"
+            elif parsed_season:
+                # Solo temporada (pack completo): usar nombre original
+                filename = os.path.basename(source_file_path)
+            else:
+                # No se pudo parsear: usar nombre original como fallback
+                filename = os.path.basename(source_file_path)
+        
         symlink_path = os.path.join(target_dir, filename)
         
         # Si ya existe un symlink allí (por alguna razón), lo eliminamos
