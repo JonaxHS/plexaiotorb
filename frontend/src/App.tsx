@@ -153,20 +153,6 @@ export default function App() {
                     if (d.logs) setGlobalLogs(d.logs);
                 }).catch(() => { });
 
-            // Poll per-job logs for all active (non-completed, non-errored) jobs
-            Object.entries(activeDownloads).forEach(([id, job]: [string, any]) => {
-                if (job.status === 'Completed' || job.status === 'Error' || job.status === 'Cancelled') return;
-                const since = jobLogSinceRef.current[id] || 0;
-                fetch(`${API_BASE}/jobs/${id}/logs?since=${since}`)
-                    .then(r => r.json())
-                    .then(d => {
-                        if (d.logs && d.logs.length > 0) {
-                            setJobLogs(prev => ({ ...prev, [id]: [...(prev[id] || []), ...d.logs] }));
-                            jobLogSinceRef.current[id] = d.total;
-                        }
-                    }).catch(() => { });
-            });
-
             fetch(`${API_BASE}/rclone/status`)
                 .then(r => r.json())
                 .then(d => {
@@ -194,6 +180,27 @@ export default function App() {
         }, 5000);
         return () => clearInterval(interval);
     }, [setupMode, checkingStatus]);
+
+    // Polling de logs por trabajo — en un efecto separado para evitar stale closure
+    useEffect(() => {
+        if (setupMode || checkingStatus) return;
+        const jobLogInterval = setInterval(() => {
+            Object.entries(activeDownloads).forEach(([id, job]: [string, any]) => {
+                if (job.status === 'Completed' || job.status === 'Error' || job.status === 'Cancelled') return;
+                const since = jobLogSinceRef.current[id] || 0;
+                fetch(`${API_BASE}/jobs/${id}/logs?since=${since}`)
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.logs && d.logs.length > 0) {
+                            setJobLogs(prev => ({ ...prev, [id]: [...(prev[id] || []), ...d.logs] }));
+                            jobLogSinceRef.current[id] = d.total;
+                        }
+                    }).catch(() => { });
+            });
+        }, 3000); // Poll más rápido (3s) para logs en tiempo real
+        return () => clearInterval(jobLogInterval);
+    }, [setupMode, checkingStatus, activeDownloads]);
+
 
     const fetchTrending = async () => {
         try {
