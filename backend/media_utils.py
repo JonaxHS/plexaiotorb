@@ -122,6 +122,14 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
     if "sample" in n_clean or "trailer" in n_clean or "extra" in n_clean:
         score -= 60
         
+    # VALIDACIÓN CRÍTICA: Si no hay NINGUNA coincidencia de título, original_title o expected_filename,
+    # el puntaje debe ser 0 para evitar que el bonus de SXXEXX (muy común) cause falsos positivos.
+    has_any_title_hint = (len(matched_t) > 0) or (len(matched_o) > 0) or (e_clean and (e_clean in n_clean or n_clean in e_clean))
+    
+    if not has_any_title_hint:
+        # CASO ESPECIAL: Si es un match exacto de ID (pero aquí no tenemos ID) o si el score es bajísimo
+        return 0
+
     return min(100, max(0, int(score)))
 
 def is_valid_match(item_name: str, expected_filename: str, title: str, year: str, season: int = None, episode: int = None, original_title: str = "") -> bool:
