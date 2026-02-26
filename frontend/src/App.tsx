@@ -371,11 +371,21 @@ export default function App() {
             });
             if (res.ok) {
                 addLog(`¡Vínculo manual exitoso!`);
+                showNotification(`¡Vínculo manual exitoso! "${browsingJob.title}" ya está en la librería.`, "success");
+
+                // Actualizar estado local para que se ponga en VERDE inmediatamente
+                if (browsingJob.media_type === 'movie') {
+                    setSymlinkExists(true);
+                } else if (browsingJob.media_type === 'tv' && browsingJob.episode) {
+                    setEpisodeSyncStatus(prev => ({ ...prev, [browsingJob.episode!]: 'synced' }));
+                }
+
                 setShowTorBoxBrowser(false);
                 setBrowsingJob(null);
             } else {
                 const err = await res.json();
                 addLog(`Error en vínculo manual: ${err.detail}`);
+                showNotification(`Error: ${err.detail}`, "error");
             }
         } catch (err) {
             addLog(`Error de red en vínculo manual: ${err}`);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Folder, File, ChevronRight, ChevronLeft, Link as LinkIcon, X } from 'lucide-react';
+import { Folder, File, ChevronRight, ChevronLeft, Link as LinkIcon, X, Search } from 'lucide-react';
 
 interface TorBoxBrowserProps {
     onSelect: (path: string) => void;
@@ -10,10 +10,12 @@ interface TorBoxBrowserProps {
 export default function TorBoxBrowser({ onSelect, onClose, apiBase }: TorBoxBrowserProps) {
     const [path, setPath] = useState("/");
     const [items, setItems] = useState<any[]>([]);
+    const [searchTerm, setSearchTerm] = useState("");
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         setLoading(true);
+        setSearchTerm(""); // Reset search when path changes
         fetch(`${apiBase}/torbox/list?path=${encodeURIComponent(path)}`)
             .then(r => r.json())
             .then(d => {
@@ -22,6 +24,10 @@ export default function TorBoxBrowser({ onSelect, onClose, apiBase }: TorBoxBrow
             })
             .catch(() => setLoading(false));
     }, [path, apiBase]);
+
+    const filteredItems = items.filter(item =>
+        item.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     const navigateTo = (item: any) => {
         if (item.is_dir) {
@@ -46,6 +52,28 @@ export default function TorBoxBrowser({ onSelect, onClose, apiBase }: TorBoxBrow
                             Explorador de TorBox
                         </h3>
                         <p className="text-[10px] text-zinc-500 font-mono mt-0.5 truncate max-w-md">{path}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-1 max-w-xs mx-4">
+                        <div className="relative w-full">
+                            <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Buscar en esta carpeta..."
+                                className="w-full bg-zinc-950 border border-zinc-700/50 rounded-lg py-1.5 pl-8 pr-3 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-amber-500/50 transition-all"
+                            />
+                            <div className="absolute left-2.5 top-1/2 -translate-y-1/2">
+                                <Search className="w-3.5 h-3.5 text-zinc-500" />
+                            </div>
+                            {searchTerm && (
+                                <button
+                                    onClick={() => setSearchTerm("")}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-zinc-800 rounded-md"
+                                >
+                                    <X className="w-3 h-3 text-zinc-500" />
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-zinc-700 rounded-full transition-colors">
                         <X className="w-5 h-5 text-zinc-400" />
@@ -72,7 +100,7 @@ export default function TorBoxBrowser({ onSelect, onClose, apiBase }: TorBoxBrow
                         <div className="text-center py-20 text-zinc-600 italic">Este directorio está vacío.</div>
                     ) : (
                         <div className="grid gap-1 px-1">
-                            {items.map((item, idx) => (
+                            {filteredItems.map((item, idx) => (
                                 <div
                                     key={idx}
                                     className={`flex items-center justify-between p-3 rounded-xl border border-transparent hover:bg-zinc-800 hover:border-zinc-700 transition-all group cursor-pointer`}
@@ -106,6 +134,11 @@ export default function TorBoxBrowser({ onSelect, onClose, apiBase }: TorBoxBrow
                                     )}
                                 </div>
                             ))}
+                            {searchTerm && filteredItems.length === 0 && (
+                                <div className="text-center py-10 text-zinc-500 italic text-sm">
+                                    No se encontraron archivos que coincidan con "{searchTerm}"
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
