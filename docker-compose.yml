@@ -45,6 +45,7 @@ services:
       - ./rclone_config:/rclone_config:ro
       - ./plex_init.sh:/custom-cont-init.d/rclone_init.sh:ro
       - torbox_data:/mnt/torbox:rw
+      - /dev/shm:/transcode
     cap_add:
       - SYS_ADMIN
     devices:
