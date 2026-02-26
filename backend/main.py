@@ -767,6 +767,18 @@ def resume_job(job_id: str):
 class SymlinkTestRequest(BaseModel):
     filepath: str
 
+class DeleteSeasonRequest(BaseModel):
+    media_type: str
+    folder_name: str
+    season_number: int
+
+class DeleteSeriesRequest(BaseModel):
+    media_type: str
+    folder_name: str
+
+class DeleteMovieRequest(BaseModel):
+    folder_name: str
+
 @app.get("/api/library")
 def get_library():
     """Rastrea el directorio /Media para devolver la lista de películas y series enlazadas localmente con sus IDs."""
@@ -921,15 +933,15 @@ def delete_symlink(req: SymlinkTestRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/library/delete-season")
-def delete_season(media_type: str, folder_name: str, season_number: int):
+def delete_season(req: DeleteSeasonRequest):
     """Elimina todos los archivos de una temporada completa"""
     base_library = config_module.config.get("plex", {}).get("library_path", "/Media")
     
-    if media_type != "tv":
+    if req.media_type != "tv":
         raise HTTPException(status_code=400, detail="Solo se pueden borrar temporadas de series")
     
-    safe_folder = os.path.basename(folder_name)
-    season_dir = os.path.join(base_library, "Shows", safe_folder, f"Season {season_number:02d}")
+    safe_folder = os.path.basename(req.folder_name)
+    season_dir = os.path.join(base_library, "Shows", safe_folder, f"Season {req.season_number:02d}")
     
     if not os.path.isdir(season_dir):
         raise HTTPException(status_code=404, detail="La temporada no existe")
@@ -938,20 +950,20 @@ def delete_season(media_type: str, folder_name: str, season_number: int):
         import shutil
         # Borrar todo el directorio de la temporada
         shutil.rmtree(season_dir)
-        print(f"[Library] Temporada {season_number:02d} de {folder_name} eliminada completamente")
-        return {"status": "ok", "message": f"Temporada {season_number:02d} eliminada correctamente"}
+        print(f"[Library] Temporada {req.season_number:02d} de {req.folder_name} eliminada completamente")
+        return {"status": "ok", "message": f"Temporada {req.season_number:02d} eliminada correctamente"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error eliminando temporada: {str(e)}")
 
 @app.post("/api/library/delete-entire-series")
-def delete_entire_series(media_type: str, folder_name: str):
+def delete_entire_series(req: DeleteSeriesRequest):
     """Elimina todos los archivos de una serie completa (incluido el directorio base)"""
     base_library = config_module.config.get("plex", {}).get("library_path", "/Media")
     
-    if media_type != "tv":
+    if req.media_type != "tv":
         raise HTTPException(status_code=400, detail="Solo se pueden borrar series")
     
-    safe_folder = os.path.basename(folder_name)
+    safe_folder = os.path.basename(req.folder_name)
     series_dir = os.path.join(base_library, "Shows", safe_folder)
     
     if not os.path.isdir(series_dir):
@@ -961,17 +973,17 @@ def delete_entire_series(media_type: str, folder_name: str):
         import shutil
         # Borrar todo el directorio de la serie
         shutil.rmtree(series_dir)
-        print(f"[Library] Serie {folder_name} eliminada completamente")
-        return {"status": "ok", "message": f"Serie {folder_name} eliminada correctamente"}
+        print(f"[Library] Serie {req.folder_name} eliminada completamente")
+        return {"status": "ok", "message": f"Serie {req.folder_name} eliminada correctamente"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error eliminando serie: {str(e)}")
 
 @app.post("/api/library/delete-entire-movie")
-def delete_entire_movie(folder_name: str):
+def delete_entire_movie(req: DeleteMovieRequest):
     """Elimina todos los archivos de una película"""
     base_library = config_module.config.get("plex", {}).get("library_path", "/Media")
     
-    safe_folder = os.path.basename(folder_name)
+    safe_folder = os.path.basename(req.folder_name)
     movie_dir = os.path.join(base_library, "Movies", safe_folder)
     
     if not os.path.isdir(movie_dir):
@@ -981,8 +993,8 @@ def delete_entire_movie(folder_name: str):
         import shutil
         # Borrar todo el directorio de la película
         shutil.rmtree(movie_dir)
-        print(f"[Library] Película {folder_name} eliminada completamente")
-        return {"status": "ok", "message": f"Película {folder_name} eliminada correctamente"}
+        print(f"[Library] Película {req.folder_name} eliminada completamente")
+        return {"status": "ok", "message": f"Película {req.folder_name} eliminada correctamente"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error eliminando película: {str(e)}")
 
