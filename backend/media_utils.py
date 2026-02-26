@@ -55,6 +55,33 @@ def extract_se_info(text: str):
 
     return None, None
 
+def get_season_range(text: str):
+    """
+    Detecta si un texto cubre un RANGO de temporadas (ej: S01-S05, S01.S02.S03, Complete).
+    Devuelve (min_season, max_season) o (None, None) si no aplica.
+    """
+    if not text: return None, None
+    
+    # Rango explícito: S01-S05 o S1-S5
+    match = re.search(r'[sS](\d+)[-_\.][sS](\d+)', text)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    
+    # Múltiples S sin E: S01.S02.S03 o S04 S05 etc
+    seasons = re.findall(r'[sS](\d{1,2})(?![eE\d])', text)
+    if len(seasons) >= 2:
+        nums = [int(s) for s in seasons]
+        return min(nums), max(nums)
+    
+    # Palabras clave de pack completo - cubren todas las temporadas el nombre principal
+    keywords = ['complete', 'integral', 'completa', 'all.seasons', 'temporadas']
+    text_lower = text.lower()
+    if any(kw in text_lower for kw in keywords):
+        # No sabemos el rango exacto, asumimos que cubre cualquier temporada
+        return 0, 99
+    
+    return None, None
+
 def get_match_score(name: str, expected_filename: str = "", title: str = "", year: str = "", season: int = None, episode: int = None, original_title: str = "") -> int:
     """Devuelve un puntaje de 0 a 100 de qué tanto se parece el nombre."""
     n_s, n_e = extract_se_info(name)
@@ -62,11 +89,19 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
     # 1. Validación estricta de S/E si se proveen
     if season is not None:
         if n_s is None:
-            # Si no hay temporada en el nombre, pero estamos buscando una serie, bajamos puntaje drásticamente 
-            # a menos que el nombre del archivo sea muy parecido al título (ej. "Breaking Bad Complete")
-            pass
+            # Verificar si es un pack multi-temporada que cubre esta temporada
+            range_min, range_max = get_season_range(name)
+            if range_min is not None and not (range_min <= season <= range_max):
+                return 0  # Rango de temporadas conocido pero no incluye la buscada
+            # Si n_s is None y no es un rango, puede ser una carpeta genérica - dejamos pasar
         elif n_s != season:
-            return 0
+            # Antes de rechazar, verificar si es un pack multi-temporada
+            range_min, range_max = get_season_range(name)
+            if range_min is not None and (range_min <= season <= range_max):
+                # Es un pack que incluye la temporada buscada ✓
+                pass
+            else:
+                return 0
         if episode is not None and n_e is not None and n_e != episode:
             return 0
     else:
