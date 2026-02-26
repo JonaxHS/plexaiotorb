@@ -113,11 +113,16 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
     str_year = str(year).strip() if year else ""
     if str_year:
         years_in_name = re.findall(r'\b(19\d{2}|20\d{2})\b', name)
-        # Para películas, ser estrictos (evita Ted 2012 vs Ted 2024)
-        # Para series, el año en el archivo suele ser el de la temporada, no el de inicio.
-        if season is None:
-            if years_in_name and str_year not in years_in_name:
+        if years_in_name and str_year not in years_in_name:
+            if season is None:
+                # Para películas: siempre fatal
                 return 0
+            elif n_s is None and get_season_range(name) == (None, None):
+                # Para series: si el archivo NO tiene marcador de temporada/episodio,
+                # es probablemente una película. Aplicar validación estricta de año.
+                # Ej: "Ted 2 (2015)" cuando buscamos "Ted S01E07 (2024)"
+                return 0
+            # Si tiene marcador de temporada (ej: S02), el año puede ser distinto (es el año de esa temporada)
         else:
             # Para series, no es fatal, pero si coincide damos fe
             pass
