@@ -78,9 +78,14 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
     str_year = str(year).strip() if year else ""
     if str_year:
         years_in_name = re.findall(r'\b(19\d{2}|20\d{2})\b', name)
-        # Si encuentra años en el archivo y NINGUNO es el esperado, entonces es el objeto equivocado
-        if years_in_name and str_year not in years_in_name:
-            return 0
+        # Para películas, ser estrictos (evita Ted 2012 vs Ted 2024)
+        # Para series, el año en el archivo suele ser el de la temporada, no el de inicio.
+        if season is None:
+            if years_in_name and str_year not in years_in_name:
+                return 0
+        else:
+            # Para series, no es fatal, pero si coincide damos fe
+            pass
             
     n_clean = clean_name(os.path.splitext(name)[0])
     e_clean = clean_name(os.path.splitext(expected_filename)[0]) if expected_filename else ""
