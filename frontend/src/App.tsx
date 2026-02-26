@@ -547,7 +547,7 @@ export default function App() {
             });
             if (res.ok) {
                 addLog(`Temporada ${seasonNumber} eliminada completamente`);
-                addGlobalNotification(`Temporada ${seasonNumber} eliminada`, 'success');
+                showNotification(`Temporada ${seasonNumber} eliminada`, 'success');
                 if (libStructItem) {
                     openLibraryStructure(libStructItem, libStructItem.media_type);
                 }
@@ -573,7 +573,7 @@ export default function App() {
             });
             if (res.ok) {
                 addLog(`Serie ${libStructItem?.name} eliminada completamente`);
-                addGlobalNotification(`Serie eliminada`, 'success');
+                showNotification(`Serie eliminada`, 'success');
                 setShowLibStruct(false);
                 setLibStructItem(null);
             } else {
@@ -597,7 +597,7 @@ export default function App() {
             });
             if (res.ok) {
                 addLog(`Película ${libStructItem?.name} eliminada completamente`);
-                addGlobalNotification(`Película eliminada`, 'success');
+                showNotification(`Película eliminada`, 'success');
                 setShowLibStruct(false);
                 setLibStructItem(null);
             } else {
