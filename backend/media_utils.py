@@ -182,6 +182,22 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
     
     if not has_any_title_hint:
         return 0
+    
+    # VALIDACIÓN ESTRICTA MULTI-PALABRA:
+    # Si el título tiene 2+ palabras clave (ej: "Ted Lasso"), exigir que TODAS coincidan.
+    # Esto evita que "ted.S01E01.mkv" matchee "Ted Lasso" solo por la palabra "ted".
+    if len(t_words) >= 2:
+        match_ratio_t = len(matched_t) / len(t_words)
+        # Verificar también si el título original tiene suficiente coincidencia por sí solo
+        match_ratio_o = (len(matched_o) / len(o_words)) if o_words else 0
+        # El e_clean puede satisfacer el match si el expected_filename contiene el título completo
+        has_full_match = (
+            match_ratio_t >= 1.0 or           # todas las palabras del título español coinciden
+            match_ratio_o >= 0.7 or            # el título original (inglés) coincide >70%
+            (e_clean and (e_clean in n_clean or n_clean in e_clean))  # expected filename coincide
+        )
+        if not has_full_match:
+            return 0
 
     return min(100, max(0, int(score)))
 
