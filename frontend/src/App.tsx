@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Film, Tv, Play, Pause, Plus, TerminalSquare, X, Settings, Activity, CheckCircle2, XCircle, Trash2, Link as LinkIcon, Zap, Download } from 'lucide-react';
+import { Search, Film, Tv, Play, Pause, Plus, TerminalSquare, X, Settings, Activity, CheckCircle2, XCircle, Trash2, Link as LinkIcon, Zap, Download, FileText } from 'lucide-react';
 import TorBoxBrowser from './components/TorBoxBrowser';
 
 // Si accedes desde otro equipo en tu red (ej. iPad), usa la IP local en vez de localhost.
@@ -89,6 +89,7 @@ export default function App() {
     const [libStructDetails, setLibStructDetails] = useState<any>(null);
     const [loadingStruct, setLoadingStruct] = useState(false);
     const [symlinkStatuses, setSymlinkStatuses] = useState<Record<string, 'testing' | 'alive' | 'dead'>>({});
+    const [selectedSymlinkInfo, setSelectedSymlinkInfo] = useState<any>(null);
 
     const [logs, setLogs] = useState<string[]>(["[System] Conectado a PlexAioTorb GUI."]);
     const [globalLogs, setGlobalLogs] = useState<string[]>([]);
@@ -525,6 +526,24 @@ export default function App() {
                 }
             } else {
                 alert("Error eliminando el symlink.");
+            }
+        } catch (err) {
+            alert(`Error de red: ${err}`);
+        }
+    };
+
+    const getSymlinkInfo = async (fullPath: string) => {
+        try {
+            const res = await fetch(`${API_BASE}/library/symlink_info`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filepath: fullPath })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSelectedSymlinkInfo(data);
+            } else {
+                alert("Error obteniendo información del symlink.");
             }
         } catch (err) {
             alert(`Error de red: ${err}`);
@@ -1801,7 +1820,10 @@ export default function App() {
                                     <div className="space-y-2 font-mono text-sm">
                                         {libStructData.map((node, i) => (
                                             <div key={i} className={`flex items-center justify-between p-3 rounded-lg border ${node.type === 'directory' ? 'bg-zinc-900/80 border-zinc-800' : 'bg-zinc-900/30 border-zinc-800/50 hover:border-zinc-700'} transition-colors`}>
-                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                <div 
+                                                    className="flex items-center gap-3 overflow-hidden flex-1 cursor-pointer" 
+                                                    onClick={() => node.type === 'file' && getSymlinkInfo(node.full_path)}
+                                                >
                                                     {node.type === 'directory' ? (
                                                         <div className="w-6 h-6 flex items-center justify-center rounded bg-amber-500/10">
                                                             <span className="text-amber-500 text-lg">📁</span>
@@ -1854,6 +1876,101 @@ export default function App() {
                                                 )}
                                             </div>
                                         ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Symlink Info Modal */}
+            {
+                selectedSymlinkInfo && (
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
+                            <div className="p-5 border-b border-zinc-900 flex justify-between items-center bg-zinc-900/30">
+                                <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
+                                    <Activity className="w-5 h-5 text-purple-500" />
+                                    Detalles del Symlink
+                                </h2>
+                                <button
+                                    onClick={() => setSelectedSymlinkInfo(null)}
+                                    className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="p-6 space-y-4">
+                                {/* Estado del Symlink */}
+                                <div className="flex items-center justify-between p-4 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                                    <span className="text-sm font-semibold text-zinc-400">Estado</span>
+                                    {selectedSymlinkInfo.is_symlink ? (
+                                        selectedSymlinkInfo.is_alive ? (
+                                            <span className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-green-500/10 text-green-500 border border-green-500/20 text-sm font-semibold">
+                                                <CheckCircle2 className="w-4 h-4" /> Symlink Activo
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-red-500/10 text-red-500 border border-red-500/20 text-sm font-semibold">
+                                                <XCircle className="w-4 h-4" /> Symlink Roto
+                                            </span>
+                                        )
+                                    ) : (
+                                        <span className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20 text-sm font-semibold">
+                                            <FileText className="w-4 h-4" /> Archivo Normal
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* Nombre en Plex (Convertido) */}
+                                <div className="space-y-2">
+                                    <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Nombre en Plex (Formato Convertido)</label>
+                                    <div className="p-4 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                                        <p className="font-mono text-sm text-emerald-400 break-all">
+                                            {selectedSymlinkInfo.symlink_name}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Nombre Original */}
+                                {selectedSymlinkInfo.is_symlink && (
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Nombre Original (Archivo de TorBox)</label>
+                                        <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                                            <p className="font-mono text-sm text-amber-400 break-all">
+                                                {selectedSymlinkInfo.original_name}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Ruta Completa */}
+                                <div className="space-y-2">
+                                    <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Ruta Completa del {selectedSymlinkInfo.is_symlink ? 'Origen' : 'Archivo'}</label>
+                                    <div className="p-4 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                                        <p className="font-mono text-xs text-zinc-500 break-all">
+                                            {selectedSymlinkInfo.target_path}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Comparación Visual */}
+                                {selectedSymlinkInfo.is_symlink && selectedSymlinkInfo.original_name !== selectedSymlinkInfo.symlink_name && (
+                                    <div className="p-4 rounded-lg bg-purple-500/5 border border-purple-500/20">
+                                        <h3 className="text-sm font-semibold text-purple-400 mb-2 flex items-center gap-2">
+                                            <Zap className="w-4 h-4" /> Conversión Aplicada
+                                        </h3>
+                                        <div className="space-y-2 text-xs text-zinc-400">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-zinc-500">De:</span>
+                                                <span className="font-mono text-amber-400">{selectedSymlinkInfo.original_name}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-zinc-500">A:</span>
+                                                <span className="font-mono text-emerald-400">{selectedSymlinkInfo.symlink_name}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>

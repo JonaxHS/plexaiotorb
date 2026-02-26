@@ -857,6 +857,43 @@ def test_symlink(req: SymlinkTestRequest):
         return {"alive": is_alive}
     raise HTTPException(status_code=404, detail="El archivo local se borró")
 
+@app.post("/api/library/symlink_info")
+def symlink_info(req: SymlinkTestRequest):
+    """Obtiene información detallada de un symlink: origen y nombre convertido"""
+    if not os.path.lexists(req.filepath):
+        raise HTTPException(status_code=404, detail="El archivo no existe")
+    
+    try:
+        is_symlink = os.path.islink(req.filepath)
+        symlink_name = os.path.basename(req.filepath)
+        
+        if is_symlink:
+            # Obtener el archivo origen del symlink
+            target_path = os.readlink(req.filepath)
+            target_name = os.path.basename(target_path)
+            is_alive = os.path.exists(req.filepath)
+            
+            return {
+                "is_symlink": True,
+                "symlink_name": symlink_name,
+                "original_name": target_name,
+                "target_path": target_path,
+                "is_alive": is_alive,
+                "symlink_full_path": req.filepath
+            }
+        else:
+            # No es symlink, es un archivo normal
+            return {
+                "is_symlink": False,
+                "symlink_name": symlink_name,
+                "original_name": symlink_name,
+                "target_path": req.filepath,
+                "is_alive": True,
+                "symlink_full_path": req.filepath
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obteniendo información: {str(e)}")
+
 @app.delete("/api/library/symlink")
 def delete_symlink(req: SymlinkTestRequest):
     """Elimina el symlink y limpia subcarpetas vacías para no dejar basura en Plex"""
