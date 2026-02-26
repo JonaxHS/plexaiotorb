@@ -38,13 +38,13 @@ def extract_se_info(text: str):
     if match:
         return int(match.group(1)), int(match.group(2))
 
-    # 4. Formato Temporada 1 Capitulo 1
-    t_match = re.search(r'Temporada\s*(\d+)', text, re.I)
-    c_match = re.search(r'(?:Capitulo|Episodio)\s*(\d+)', text, re.I)
+    # 4. Formato Temporada 1 Capitulo 1 (Soporta Inglés y Español)
+    t_match = re.search(r'(?:Temporada|Season|Series)\s*(\d+)', text, re.I)
+    c_match = re.search(r'(?:Capitulo|Episodio|Episode|Ep)\s*(\d+)', text, re.I)
     if t_match and c_match:
         return int(t_match.group(1)), int(c_match.group(1))
     
-    # 5. Formato Temporada X (Packs)
+    # 5. Formato Temporada X (Packs / Carpetas)
     if t_match:
         return int(t_match.group(1)), None
     
@@ -98,7 +98,8 @@ def get_match_score(name: str, expected_filename: str = "", title: str = "", yea
     if o_clean and n_clean == o_clean: return 95
     
     # EVITAR: "Ted" matching "Ted 2" si "2" no está en el título solicitado
-    if t_clean and len(t_clean) <= 4:
+    # Solo para PELÍCULAS, ya que en series el "2" puede ser la temporada (E.g. Ted 1x01)
+    if season is None and t_clean and len(t_clean) <= 4:
         # Si el nombre del archivo tiene un número justo después del título que no está en el título
         if n_clean.startswith(t_clean) and len(n_clean) > len(t_clean):
             next_char = n_clean[len(t_clean)]
