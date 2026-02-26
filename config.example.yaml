@@ -1,0 +1,12 @@
+# PlexAioTorb Config Example
+# Renombra este archivo a config.yaml y pon tus datos reales.
+
+tmdb:
+  api_key: "TU_API_KEY_DE_TMDB_AQUI"
+
+aiostreams:
+  url: "http://url-de-tu-aiostreams:puerto"
+
+plex:
+  # Ruta raíz donde se crearán los symlinks (debe coincidir con la carpeta mapeada en docker-compose)
+  library_path: "/Media"

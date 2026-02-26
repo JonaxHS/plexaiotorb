@@ -1,0 +1,26 @@
+# Environments
+.env
+backend/.env
+frontend/.env
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# Build outputs
+dist/
+build/
+
+# Media and configs
+plex_media/
+plex_config/
+rclone_config/
+torbox_data/
+app_config/
+backend/config/
+backend/config.yaml/
+backend/rclone_config/
+
+# OS generated
+.DS_Store

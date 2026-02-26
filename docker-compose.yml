@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - torbox_data:/mnt/torbox:ro # Read-only to avoid modifying TorBox files
+      - ./app_config:/app/config:rw
+      - ./plex_media:/Media:rw # Where we'll create the symlinks
+      - ./plex_config:/plex_config:rw # To edit Preferences.xml
+      - ./rclone_config:/app/rclone_config:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    environment:
+      - TZ=UTC
+      - CONFIG_PATH=/app/config/config.yaml
+
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - VERSION=docker
+    volumes:
+      - ./plex_config:/config
+      - ./plex_media:/Media
+      - ./rclone_config:/rclone_config:ro
+      - ./plex_init.sh:/custom-cont-init.d/rclone_init.sh:ro
+      - torbox_data:/mnt/torbox:rw
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    env_file:
+      - ./backend/.env
+    ports:
+      - "32400:32400"
+    restart: unless-stopped
+    depends_on:
+      - backend # Esperar a que exista el backend/symlink creator
+
+volumes:
+  torbox_data:
