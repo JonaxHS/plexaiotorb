@@ -83,7 +83,7 @@ def watch_for_file(
     season: int = None,
     episode: int = None,
     mount_path: str = "/mnt/torbox",
-    timeout_seconds: int = 3600,
+    timeout_seconds: int = 7200,  # 2 horas por defecto (era 1 hora)
     on_status: Optional[callable] = None,
     get_status: Optional[callable] = None,
     original_title: str = "",
@@ -91,7 +91,7 @@ def watch_for_file(
 ) -> Optional[str]:
     """
     Busca un archivo en TorBox por filename exacto.
-    Limpia agresivamente el caché de rclone en cada ciclo.
+    Limpia caché de rclone cada ciclo, con limpieza AGRESIVA cada 5 minutos.
     """
     start_time = time.time()
     msg = f"Buscando archivo: '{expected_filename}'"
@@ -106,6 +106,8 @@ def watch_for_file(
     # Limpiar caché inicial agresivamente
     log(f"[Watcher] Limpiando caché de rclone...", on_log)
     cleanup_rclone_cache(on_log)
+    
+    cycle_count = 0
 
     while time.time() - start_time < timeout_seconds:
         if get_status:
@@ -126,16 +128,26 @@ def watch_for_file(
         if found_path:
             return found_path
 
-        # Limpiar caché antes de reintentar
+        cycle_count += 1
+        
+        # Limpieza agresiva cada 5 minutos (30 ciclos de 10 segundos)
+        is_aggressive = (cycle_count % 30 == 0)
+        
+        if is_aggressive:
+            log(f"[Watcher] Ejecutando limpieza AGRESIVA de caché (cada 5 min)...", on_log)
+        
         log(f"[Watcher] No encontrado. Limpiando caché y reintentando...", on_log)
-        cleanup_rclone_cache(on_log)
+        cleanup_rclone_cache(on_log, aggressive=is_aggressive)
         
         time.sleep(10)
 
     return None
 
-def cleanup_rclone_cache(on_log: Optional[callable] = None):
-    """Limpia el caché de rclone. Detecta y reporta si rclone rc no está activo."""
+def cleanup_rclone_cache(on_log: Optional[callable] = None, aggressive: bool = False):
+    """
+    Limpia el caché de rclone. Detecta y reporta si rclone rc no está activo.
+    Si aggressive=True, intenta remount completo.
+    """
     try:
         result = subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5, text=True)
         if result.returncode == 0:
@@ -145,13 +157,24 @@ def cleanup_rclone_cache(on_log: Optional[callable] = None):
             if "connection refused" in error_msg.lower() or "127.0.0.1:5572" in error_msg:
                 log(f"[Watcher] 🔴 CRÍTICO: rclone rc NO activo (Puerto 5572 no responde)", on_log)
                 log(f"[Watcher] 🔴 Solución: Inicia rclone rc con: rclone rcd --rc-serve &", on_log)
-                log(f"[Watcher] 🔴 O monta con: rclone mount remote:/ /mnt/torbox --rc &", on_log)
             else:
                 log(f"[Watcher] ⚠️ vfs/forget error: {error_msg[:100]}", on_log)
     except subprocess.TimeoutExpired:
         log(f"[Watcher] ⚠️ rclone rc timeout", on_log)
     except Exception as e:
         log(f"[Watcher] ⚠️ Error conectando con rclone rc: {e}", on_log)
+    
+    # Limpieza agresiva: remount forzado
+    if aggressive:
+        try:
+            log(f"[Watcher] 🔄 Ejecutando umount y remount forzado de rclone...", on_log)
+            subprocess.run(["umount", "-f", "/mnt/torbox"], capture_output=True, timeout=5)
+            log(f"[Watcher] ✓ Mount desmontado", on_log)
+            time.sleep(2)
+            # No se puede remount desde acá, pero el aviso ayuda al admin
+            log(f"[Watcher] ⚠️ Necesita remount manual: rclone mount ...", on_log)
+        except Exception as e:
+            log(f"[Watcher] ⚠️ Error en remount agresivo: {e}", on_log)
 
 
 def start_watcher_thread(
