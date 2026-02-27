@@ -2,28 +2,6 @@
 set -e
 echo "Starting Backend Init Script"
 
-RCLONE_MOUNT_OPTS=(
-    "torbox:"
-    "/mnt/torbox"
-    "--config" "/app/rclone_config/rclone.conf"
-    "--vfs-cache-mode" "writes"  # Cambiar a 'writes' en lugar de 'full' para menos I/O
-    "--vfs-cache-max-age" "24h"
-    "--vfs-cache-max-size" "50G"  # Aumentar a 50GB
-    "--vfs-read-chunk-size" "256M"  # Aumentar chunk size
-    "--vfs-read-chunk-size-limit" "off"
-    "--buffer-size" "64M"  # Aumentar buffer
-    "--dir-cache-time" "100h"  # Cache más agresiv
-    "--attr-timeout" "100h"
-    "--vfs-read-wait-time" "5ms"
-    "--vfs-write-wait-time" "5ms"
-    "--vfs-fast-fingerprint" "true"  # No verificar fingerprint cada vez
-    "--allow-non-empty"
-    "--allow-other"
-    "--rc"
-    "--rc-addr" "127.0.0.1:5572"
-    "--log-level" "INFO"
-)
-
 if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
     # Unmount if already mounted
     umount -f /mnt/torbox 2>/dev/null || true
@@ -31,7 +9,24 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
     mkdir -p /mnt/torbox
     
     echo "[$(date)] Montando torbox WebDAV dentro del contenedor Backend..."
-    nohup rclone mount "${RCLONE_MOUNT_OPTS[@]}" \
+    nohup rclone mount torbox: /mnt/torbox \
+        --config /app/rclone_config/rclone.conf \
+        --vfs-cache-mode writes \
+        --vfs-cache-max-age 24h \
+        --vfs-cache-max-size 50G \
+        --vfs-read-chunk-size 256M \
+        --vfs-read-chunk-size-limit off \
+        --buffer-size 64M \
+        --dir-cache-time 100h \
+        --attr-timeout 100h \
+        --vfs-read-wait-time 5ms \
+        --vfs-write-wait-time 5ms \
+        --vfs-fast-fingerprint true \
+        --allow-non-empty \
+        --allow-other \
+        --rc \
+        --rc-addr 127.0.0.1:5572 \
+        --log-level INFO \
         > /tmp/rclone.log 2>&1 &
     
     echo "[$(date)] Esperando a que rclone responda..."

@@ -112,7 +112,7 @@ def start_rclone_monitor():
                     # Desmount
                     try:
                         subprocess.run(["umount", "-f", "/mnt/torbox"], timeout=5, capture_output=True)
-                        time.sleep(1)
+                        time.sleep(2)
                     except:
                         pass
                     
@@ -141,8 +141,29 @@ def start_rclone_monitor():
                                         "--rc-addr", "127.0.0.1:5572",
                                         "--log-level", "INFO"
                                     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                                    print("[Rclone Monitor] ✓ Rclone relanzado exitosamente")
-                                    time.sleep(5)
+                                    print("[Rclone Monitor] Rclone relanzado, esperando a que monte...")
+                                    
+                                    # Esperar A QUE MONTE (hasta 10 segundos)
+                                    for attempt in range(10):
+                                        time.sleep(1)
+                                        try:
+                                            # Verificar que RC responda
+                                            test = subprocess.run(
+                                                ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
+                                                capture_output=True,
+                                                timeout=3,
+                                                text=True
+                                            )
+                                            if test.returncode == 0:
+                                                # Verificar que hay archivos en el mount
+                                                item_count = len(os.listdir("/mnt/torbox"))
+                                                print(f"[Rclone Monitor] ✓ Rclone montado exitosamente ({item_count} items)")
+                                                break
+                                        except:
+                                            pass
+                                    else:
+                                        print("[Rclone Monitor] ✗ Timeout esperando rclone")
+                                        
                     except Exception as e:
                         print(f"[Rclone Monitor] ✗ Error relanzando rclone: {e}")
                         
