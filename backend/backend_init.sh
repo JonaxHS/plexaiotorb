@@ -16,16 +16,17 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
     nohup rclone mount torbox: /mnt/torbox \
         --config /app/rclone_config/rclone.conf \
         --vfs-cache-mode writes \
-        --vfs-cache-max-age 24h \
+        --vfs-cache-max-age 15m \
         --vfs-cache-max-size 50G \
         --vfs-read-chunk-size 256M \
         --vfs-read-chunk-size-limit off \
         --buffer-size 64M \
-        --dir-cache-time 100h \
-        --attr-timeout 100h \
+        --dir-cache-time 10m \
+        --attr-timeout 10m \
         --vfs-read-wait 5ms \
         --vfs-write-wait 5ms \
         --vfs-fast-fingerprint \
+        --poll-interval 30s \
         --allow-non-empty \
         --allow-other \
         --rc \
