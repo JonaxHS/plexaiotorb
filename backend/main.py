@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -126,15 +126,20 @@ def start_rclone_monitor():
         except Exception:
             return False
 
-    def mount_alive() -> tuple[bool, str, int]:
+    def mount_alive() -> Tuple[bool, str, int]:
+        """Verifica que /mnt/torbox esté montado y funcional."""
         try:
             if not os.path.exists("/mnt/torbox"):
                 return False, "mount_path_missing", 0
             if not os.path.ismount("/mnt/torbox"):
                 return False, "not_a_mount", 0
+            # Intento rápido de listado - si falla, puede estar cargando
             items = os.listdir("/mnt/torbox")
             return True, "ok", len(items)
         except OSError as e:
+            # I/O errors pueden ser temporales durante la carga inicial
+            if "Input/output error" in str(e):
+                return False, "mount_loading", 0
             return False, f"mount_io_error: {e}", 0
         except Exception as e:
             return False, f"mount_error: {e}", 0
@@ -197,8 +202,14 @@ def start_rclone_monitor():
             return False
 
     def monitor_rclone():
+        # Delay inicial para permitir que el mount se estabilice
+        print("[Rclone Monitor] Esperando 90s para que el mount inicial se estabilice...")
+        time.sleep(90)
+        print("[Rclone Monitor] ✓ Iniciando monitoreo activo")
+        
         last_restart_at = 0.0
         consecutive_failures = 0
+        loading_grace_count = 0  # Contador de estados "loading"
 
         while True:
             try:
@@ -208,12 +219,23 @@ def start_rclone_monitor():
 
                 if rc_ok and mount_ok:
                     consecutive_failures = 0
+                    loading_grace_count = 0
                     continue
 
+                # Si el mount está "cargando", darle más tiempo antes de considerar falla
+                if mount_reason == "mount_loading":
+                    loading_grace_count += 1
+                    if loading_grace_count < 4:  # Tolerar hasta 4 checks (60s) de estado "loading"
+                        print(f"[Rclone Monitor] Mount cargando... ({loading_grace_count}/4 checks)")
+                        continue
+                    else:
+                        print(f"[Rclone Monitor] ⚠️ Mount en estado 'loading' por más de 60s, considerando falla")
+
                 consecutive_failures += 1
+                loading_grace_count = 0
                 reason = "rc_down" if not rc_ok else mount_reason
 
-                cooldown = 20
+                cooldown = 30  # Aumentado de 20s a 30s
                 since_restart = time.time() - last_restart_at
                 if since_restart < cooldown:
                     wait_left = int(cooldown - since_restart)
@@ -224,8 +246,8 @@ def start_rclone_monitor():
                 last_restart_at = time.time()
 
                 if not repaired and consecutive_failures >= 3:
-                    print("[Rclone Monitor] ⚠️ Varias fallas seguidas, esperando 60s antes del próximo intento")
-                    time.sleep(60)
+                    print("[Rclone Monitor] ⚠️ Varias fallas seguidas, esperando 90s antes del próximo intento")
+                    time.sleep(90)
 
             except Exception as e:
                 print(f"[Rclone Monitor] ✗ Error en monitor: {e}")
@@ -234,7 +256,7 @@ def start_rclone_monitor():
     # Iniciar monitor en thread daemon
     monitor_thread = threading.Thread(target=monitor_rclone, daemon=True)
     monitor_thread.start()
-    print("[Rclone Monitor] ✓ Monitoreo de rclone iniciado (verifica cada 15s)")
+    print("[Rclone Monitor] Thread iniciado (esperará 90s antes del primer check)")
 
 TMDB_API_KEY = config.get("tmdb", {}).get("api_key", "")
 AIOSTREAMS_URL = config.get("aiostreams", {}).get("url", "")
