@@ -21,15 +21,18 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
     """
     expected_lower = expected_filename.lower()
     
+    # Verificar que el mount point existe
     if not os.path.exists(mount_path):
-        log(f"[Watcher] ERROR: Directorio de montaje no existe: {mount_path}", on_log)
+        log(f"[Watcher] 🔴 CRÍTICO: Mount point NO EXISTE: {mount_path}", on_log)
+        log(f"[Watcher] 🔴 Verifica que rclone está corriendo: sudo systemctl status rclone", on_log)
+        log(f"[Watcher] 🔴 O intenta montar: rclone mount remote:/ /mnt/torbox --daemon", on_log)
         return None
 
     try:
         # Listar raíz para diagnóstico
         try:
             root_items = os.listdir(mount_path)
-            log(f"[Watcher] Items en {mount_path}: {len(root_items)} elementos", on_log)
+            log(f"[Watcher] ✓ Mount activo. Items en {mount_path}: {len(root_items)} elementos", on_log)
             
             # Si hay pocos items, listarlos todos
             if len(root_items) < 20:
@@ -44,8 +47,12 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
                     matching = [item for item in root_items if any(word in item.lower() for word in title_words)]
                     if matching:
                         log(f"[Watcher] Items que coinciden con '{title}': {matching[:5]}", on_log)
+        except PermissionError:
+            log(f"[Watcher] 🔴 CRÍTICO: Permiso denegado en {mount_path}. Verifica permisos", on_log)
+            return None
         except Exception as e:
-            log(f"[Watcher] No se puede listar {mount_path}: {e}", on_log)
+            log(f"[Watcher] 🔴 Error listando {mount_path}: {e}", on_log)
+            return None
         
         # Búsqueda recursiva exhaustiva por el filename exacto
         found_count = 0
@@ -57,10 +64,10 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
                     log(f"[Watcher] ✓ ENCONTRADO: {full_path}", on_log)
                     return full_path
         
-        log(f"[Watcher] Se exploraron {found_count} archivos, ninguno coincide", on_log)
+        log(f"[Watcher] Se exploraron {found_count} archivos, ninguno coincide con '{expected_filename}'", on_log)
             
     except Exception as e:
-        log(f"[Watcher] ERROR en búsqueda: {e}", on_log)
+        log(f"[Watcher] 🔴 ERROR fatal en búsqueda: {e}", on_log)
 
     log(f"[Watcher] ARCHIVO NO ENCONTRADO: '{expected_filename}'", on_log)
     return None
@@ -128,21 +135,23 @@ def watch_for_file(
     return None
 
 def cleanup_rclone_cache(on_log: Optional[callable] = None):
-    """Limpia el caché de rclone de múltiples formas."""
-    commands = [
-        (["rclone", "rc", "vfs/forget"], "vfs/forget"),
-        (["rclone", "rc", "vfs/stats"], "vfs/stats (forzar lectura)"),
-    ]
-    
-    for cmd, desc in commands:
-        try:
-            result = subprocess.run(cmd, capture_output=True, timeout=5, text=True)
-            if result.returncode == 0:
-                log(f"[Watcher] ✓ {desc} ejecutado", on_log)
+    """Limpia el caché de rclone. Detecta y reporta si rclone rc no está activo."""
+    try:
+        result = subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5, text=True)
+        if result.returncode == 0:
+            log(f"[Watcher] ✓ vfs/forget ejecutado", on_log)
+        else:
+            error_msg = result.stderr or result.stdout
+            if "connection refused" in error_msg.lower() or "127.0.0.1:5572" in error_msg:
+                log(f"[Watcher] 🔴 CRÍTICO: rclone rc NO activo (Puerto 5572 no responde)", on_log)
+                log(f"[Watcher] 🔴 Solución: Inicia rclone rc con: rclone rcd --rc-serve &", on_log)
+                log(f"[Watcher] 🔴 O monta con: rclone mount remote:/ /mnt/torbox --rc &", on_log)
             else:
-                log(f"[Watcher] ⚠ {desc} retornó error: {result.stderr[:100]}", on_log)
-        except Exception as e:
-            log(f"[Watcher] ⚠ Error ejecutando {desc}: {e}", on_log)
+                log(f"[Watcher] ⚠️ vfs/forget error: {error_msg[:100]}", on_log)
+    except subprocess.TimeoutExpired:
+        log(f"[Watcher] ⚠️ rclone rc timeout", on_log)
+    except Exception as e:
+        log(f"[Watcher] ⚠️ Error conectando con rclone rc: {e}", on_log)
 
 
 def start_watcher_thread(
