@@ -21,7 +21,7 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
         --attr-timeout 100h \
         --vfs-read-wait 5ms \
         --vfs-write-wait 5ms \
-        --vfs-fast-fingerprint true \
+        --vfs-fast-fingerprint \
         --allow-non-empty \
         --allow-other \
         --rc \
