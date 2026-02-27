@@ -66,6 +66,9 @@ def on_startup():
     load_jobs()
     start_health_monitor(interval_seconds=3600, base_library_path=config.get("plex", {}).get("library_path", "/Media"))
     
+    # Iniciar monitoreo de rclone
+    start_rclone_monitor()
+    
     # Reanudar búsquedas pendientes
     for job_id, job in active_jobs.items():
         if job.get("status") not in ["Completed", "Error"]:
@@ -78,6 +81,79 @@ def on_startup():
                     threading.Thread(target=initiate_download_process, args=(req_data, job_id), daemon=True).start()
                 except Exception as e:
                     print(f"[Jobs] Error reanudando {job_id}: {e}")
+
+def start_rclone_monitor():
+    """Monitorea rclone cada 30 segundos y lo reinicia si se cae."""
+    def monitor_rclone():
+        while True:
+            try:
+                time.sleep(30)
+                
+                # Verificar si rclone RC está activo
+                try:
+                    result = subprocess.run(
+                        ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
+                        capture_output=True,
+                        timeout=5,
+                        text=True
+                    )
+                    if result.returncode != 0:
+                        raise Exception("Curl falló")
+                except Exception:
+                    print("[Rclone Monitor] ⚠️ Rclone RC no responde. Intentando reiniciar...")
+                    
+                    # Intentar matar el proceso de rclone
+                    try:
+                        subprocess.run(["pkill", "-f", "rclone mount"], timeout=5)
+                        time.sleep(2)
+                    except:
+                        pass
+                    
+                    # Desmount
+                    try:
+                        subprocess.run(["umount", "-f", "/mnt/torbox"], timeout=5, capture_output=True)
+                        time.sleep(1)
+                    except:
+                        pass
+                    
+                    # Remount
+                    try:
+                        if os.path.exists("/app/rclone_config/rclone.conf"):
+                            with open("/app/rclone_config/rclone.conf", 'r') as f:
+                                if "[torbox]" in f.read():
+                                    subprocess.Popen([
+                                        "rclone", "mount", "torbox:", "/mnt/torbox",
+                                        "--config", "/app/rclone_config/rclone.conf",
+                                        "--vfs-cache-mode", "writes",
+                                        "--vfs-cache-max-age", "24h",
+                                        "--vfs-cache-max-size", "50G",
+                                        "--vfs-read-chunk-size", "256M",
+                                        "--vfs-read-chunk-size-limit", "off",
+                                        "--buffer-size", "64M",
+                                        "--dir-cache-time", "100h",
+                                        "--attr-timeout", "100h",
+                                        "--vfs-read-wait-time", "5ms",
+                                        "--vfs-write-wait-time", "5ms",
+                                        "--vfs-fast-fingerprint", "true",
+                                        "--allow-non-empty",
+                                        "--allow-other",
+                                        "--rc",
+                                        "--rc-addr", "127.0.0.1:5572",
+                                        "--log-level", "INFO"
+                                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    print("[Rclone Monitor] ✓ Rclone relanzado exitosamente")
+                                    time.sleep(5)
+                    except Exception as e:
+                        print(f"[Rclone Monitor] ✗ Error relanzando rclone: {e}")
+                        
+            except Exception as e:
+                print(f"[Rclone Monitor] ✗ Error en monitor: {e}")
+                time.sleep(5)
+    
+    # Iniciar monitor en thread daemon
+    monitor_thread = threading.Thread(target=monitor_rclone, daemon=True)
+    monitor_thread.start()
+    print("[Rclone Monitor] ✓ Monitoreo de rclone iniciado (verifica cada 30s)")
 
 TMDB_API_KEY = config.get("tmdb", {}).get("api_key", "")
 AIOSTREAMS_URL = config.get("aiostreams", {}).get("url", "")
