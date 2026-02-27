@@ -14,12 +14,16 @@ def log(msg: str, on_log: Optional[callable] = None):
         except Exception:
             pass
 
-def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", on_log: Optional[callable] = None) -> Optional[str]:
+def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", on_log: Optional[callable] = None, season: int = None, episode: int = None) -> Optional[str]:
     """
     Busca un archivo en TorBox usando el nombre exacto del archivo.
+    Si es una serie y no lo encuentra, intenta buscar por patrón S##E##.
     Realiza una sola pasada de búsqueda.
     """
     expected_lower = expected_filename.lower()
+    
+    # Limpiar el título: remover información de S##E## si la contiene
+    title_clean = re.sub(r'\s*[sS]\d+[eE]\d+\s*', ' ', title).strip()
     
     if not os.path.exists(mount_path):
         log(f"[Watcher] El directorio de montaje no existe: {mount_path}", on_log)
@@ -27,6 +31,7 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
 
     try:
         raw_items = os.listdir(mount_path)
+        log(f"[Watcher] Directorio {mount_path} contiene {len(raw_items)} items", on_log)
     except Exception as e:
         log(f"[Watcher] Error listando {mount_path}: {e}", on_log)
         return None
@@ -40,7 +45,7 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
                 return item_path
 
     # PASO 2: Buscar en subcarpetas
-    title_words = [w.lower() for w in re.split(r'[\s\.\-_]+', title) if len(w) >= 3] if title else []
+    title_words = [w.lower() for w in re.split(r'[\s\.\-_]+', title_clean) if len(w) >= 3] if title_clean else []
 
     def walk_for_exact(folder_path: str) -> Optional[str]:
         expected_no_ext = os.path.splitext(expected_lower)[0]
@@ -53,9 +58,11 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
                 for f in files:
                     f_lower = f.lower()
                     if f_lower == expected_lower or os.path.splitext(f_lower)[0] == expected_no_ext:
-                        return os.path.join(root, f)
-        except Exception:
-            pass
+                        full_path = os.path.join(root, f)
+                        log(f"[Watcher] ✓ Encontrado en subcarpeta: {full_path}", on_log)
+                        return full_path
+        except Exception as e:
+            log(f"[Watcher] Error en walk_for_exact({folder_path}): {e}", on_log)
         return None
 
     candidates = []
@@ -70,6 +77,8 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
         else:
             others.append(item_path)
 
+    log(f"[Watcher] Búsqueda exacta: {len(candidates)} carpetas prioritarias ('{title_clean}') + {len(others)} otras", on_log)
+
     # Primero prioritarias
     for folder in candidates:
         result = walk_for_exact(folder)
@@ -82,11 +91,40 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
         if result:
             return result
 
+    # PASO 3: Si es una serie y no encontró, buscar por patrón S##E## más flexible
+    if season is not None and episode is not None:
+        pattern = f"s{season:02d}e{episode:02d}".lower()
+        log(f"[Watcher] Búsqueda flexible por patrón: {pattern}", on_log)
+        
+        def walk_for_pattern(folder_path: str) -> Optional[str]:
+            try:
+                for root, dirs, files in os.walk(folder_path):
+                    depth = root[len(folder_path):].count(os.sep)
+                    if depth > 4:
+                        dirs.clear()
+                        continue
+                    for f in files:
+                        f_lower = f.lower()
+                        # Buscar el patrón S##E## en el nombre del archivo
+                        if pattern in f_lower.replace(' ', '').replace('_', '').replace('-', '').replace('.', ''):
+                            full_path = os.path.join(root, f)
+                            log(f"[Watcher] ✓ Encontrado por patrón: {full_path}", on_log)
+                            return full_path
+            except Exception as e:
+                log(f"[Watcher] Error en walk_for_pattern({folder_path}): {e}", on_log)
+            return None
+        
+        for folder in candidates + others:
+            result = walk_for_pattern(folder)
+            if result:
+                return result
+
+    log(f"[Watcher] No se encontró '{expected_filename}'", on_log)
     return None
 
-def check_file_exists(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox") -> Optional[str]:
+def check_file_exists(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", season: int = None, episode: int = None) -> Optional[str]:
     """Versión sincrónica de una sola pasada para checking rápido."""
-    return find_file_path(expected_filename, title, mount_path)
+    return find_file_path(expected_filename, title, mount_path, season=season, episode=episode)
 
 def watch_for_file(
     expected_filename: str,
@@ -121,18 +159,20 @@ def watch_for_file(
                 time.sleep(5)
                 continue
 
+        # Limpiar caché de rclone antes de cada búsqueda
+        try:
+            subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=3)
+            log(f"[Watcher] Caché de rclone limpiado", on_log)
+        except Exception as e:
+            log(f"[Watcher] Error limpiando caché: {e}", on_log)
+
         time.sleep(10)
         elapsed = int(time.time() - start_time)
         log(f"[Watcher] Ciclo de búsqueda... ({elapsed}s)", on_log)
         if on_status:
             on_status("Searching", f"Buscando '{expected_filename}'... ({elapsed}s)")
 
-        try:
-            subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=3)
-        except Exception:
-            pass
-
-        found_path = find_file_path(expected_filename, title, mount_path, on_log)
+        found_path = find_file_path(expected_filename, title, mount_path, on_log, season, episode)
         if found_path:
             return found_path
 
