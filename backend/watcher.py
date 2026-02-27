@@ -30,22 +30,39 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
         try:
             root_items = os.listdir(mount_path)
             log(f"[Watcher] Items en {mount_path}: {len(root_items)} elementos", on_log)
-            if len(root_items) > 0 and len(root_items) < 10:
-                log(f"[Watcher] Contenido: {root_items[:5]}", on_log)
+            
+            # Si hay pocos items, listarlos todos
+            if len(root_items) < 20:
+                log(f"[Watcher] Contenido: {root_items}", on_log)
+            else:
+                # Mostrar primeros 10
+                log(f"[Watcher] Primeros 10 items: {root_items[:10]}", on_log)
+                
+                # Buscar items que contengan palabras clave del título
+                title_words = title.lower().split()[:2] if title else []
+                if title_words:
+                    matching = [item for item in root_items if any(word in item.lower() for word in title_words)]
+                    if matching:
+                        log(f"[Watcher] Items que coinciden con '{title}': {matching[:5]}", on_log)
         except Exception as e:
             log(f"[Watcher] No se puede listar {mount_path}: {e}", on_log)
         
         # Búsqueda recursiva exhaustiva por el filename exacto
+        found_count = 0
         for root, dirs, files in os.walk(mount_path):
             for f in files:
+                found_count += 1
                 if f.lower() == expected_lower:
                     full_path = os.path.join(root, f)
                     log(f"[Watcher] ✓ ENCONTRADO: {full_path}", on_log)
                     return full_path
+        
+        log(f"[Watcher] Se exploraron {found_count} archivos, ninguno coincide", on_log)
+            
     except Exception as e:
         log(f"[Watcher] ERROR en búsqueda: {e}", on_log)
 
-    log(f"[Watcher] ARCHIVO NO ENCONTRADO: '{expected_filename}' en {mount_path}", on_log)
+    log(f"[Watcher] ARCHIVO NO ENCONTRADO: '{expected_filename}'", on_log)
     return None
 
 def check_file_exists(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", season: int = None, episode: int = None) -> Optional[str]:
@@ -114,7 +131,6 @@ def cleanup_rclone_cache(on_log: Optional[callable] = None):
     """Limpia el caché de rclone de múltiples formas."""
     commands = [
         (["rclone", "rc", "vfs/forget"], "vfs/forget"),
-        (["rclone", "rc", "cache/expire"], "cache/expire"),
         (["rclone", "rc", "vfs/stats"], "vfs/stats (forzar lectura)"),
     ]
     
@@ -124,7 +140,7 @@ def cleanup_rclone_cache(on_log: Optional[callable] = None):
             if result.returncode == 0:
                 log(f"[Watcher] ✓ {desc} ejecutado", on_log)
             else:
-                log(f"[Watcher] ⚠ {desc} retornó error: {result.stderr}", on_log)
+                log(f"[Watcher] ⚠ {desc} retornó error: {result.stderr[:100]}", on_log)
         except Exception as e:
             log(f"[Watcher] ⚠ Error ejecutando {desc}: {e}", on_log)
 
