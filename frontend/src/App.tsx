@@ -818,11 +818,9 @@ export default function App() {
         const filenameEstimate = getFilenameEstimate(stream);
 
         addLog(`Contactando AIOStreams para detonar descarga en TorBox...`);
-
-        addLog(`Contactando AIOStreams para detonar descarga en TorBox...`);
         // Detonamos la descarga simulando que un reproductor intenta acceder al stream
         if (stream.url) {
-            fetch(stream.url, { method: "HEAD", mode: "no-cors" }).catch(() => { });
+            fetch(stream.url, { method: "GET", mode: "no-cors" }).catch(() => { });
         }
 
         addLog(`Iniciando watcher para: ${filenameEstimate}`);
