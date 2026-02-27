@@ -7,6 +7,8 @@ import yaml
 import os
 import docker
 import subprocess
+import time
+import threading
 from config import config, reload_config
 import config as config_module
 from watcher import start_watcher_thread
@@ -997,6 +999,148 @@ def delete_entire_movie(req: DeleteMovieRequest):
         return {"status": "ok", "message": f"Película {req.folder_name} eliminada correctamente"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error eliminando película: {str(e)}")
+
+# ============ SYSTEM RESET ENDPOINTS ============
+
+@app.post("/api/system/reset-rclone")
+def reset_rclone():
+    """Limpia el caché de rclone y fuerza remount."""
+    try:
+        import subprocess
+        import time
+        
+        print("[System] Iniciando reset de rclone...")
+        
+        # 1. Limpiar caché vía rc
+        try:
+            result = subprocess.run(
+                ["rclone", "rc", "vfs/forget"],
+                capture_output=True,
+                timeout=5,
+                text=True
+            )
+            if result.returncode == 0:
+                print("[System] ✓ Cache de rclone limpiado (vfs/forget)")
+            else:
+                print(f"[System] ⚠️ vfs/forget retornó error: {result.stderr[:100]}")
+        except Exception as e:
+            print(f"[System] ⚠️ Error en vfs/forget: {e}")
+        
+        # 2. Intentar desmontar
+        try:
+            subprocess.run(["umount", "-f", "/mnt/torbox"], capture_output=True, timeout=5)
+            print("[System] ✓ Mount desmontado")
+            time.sleep(2)
+        except Exception as e:
+            print(f"[System] ⚠️ Error desmontando: {e}")
+        
+        # 3. Remount automático (si está configurado)
+        try:
+            if os.path.exists("/app/rclone_config/rclone.conf"):
+                with open("/app/rclone_config/rclone.conf", 'r') as f:
+                    if "[torbox]" in f.read():
+                        subprocess.Popen([
+                            "rclone", "mount", "torbox:", "/mnt/torbox",
+                            "--config", "/app/rclone_config/rclone.conf",
+                            "--vfs-cache-mode", "full",
+                            "--vfs-cache-max-age", "24h",
+                            "--vfs-cache-max-size", "10G",
+                            "--allow-non-empty",
+                            "--allow-other",
+                            "--rc",
+                            "--rc-addr", "127.0.0.1:5572"
+                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        print("[System] ✓ Rclone remontado automáticamente")
+                        time.sleep(2)
+        except Exception as e:
+            print(f"[System] ⚠️ Error remontando: {e}")
+        
+        return {
+            "status": "ok",
+            "message": "Reset de rclone completado. Caché limpiado y remontado."
+        }
+    except Exception as e:
+        print(f"[System] ✗ Error en reset de rclone: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reseteando rclone: {str(e)}")
+
+@app.post("/api/system/reset-plex")
+def reset_plex():
+    """Reinicia el contenedor de Plex."""
+    try:
+        client = docker.from_env()
+        container = client.containers.get("plex")
+        
+        print("[System] Reiniciando contenedor Plex...")
+        container.restart()
+        print("[System] ✓ Contenedor Plex reiniciado")
+        
+        return {
+            "status": "ok",
+            "message": "Contenedor Plex reiniciado exitosamente"
+        }
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Contenedor Plex no encontrado")
+    except Exception as e:
+        print(f"[System] ✗ Error reiniciando Plex: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reiniciando Plex: {str(e)}")
+
+@app.post("/api/system/reset-all")
+def reset_all():
+    """Reinicia tanto rclone como Plex."""
+    try:
+        import subprocess
+        import time
+        
+        print("[System] Iniciando reset completo del sistema...")
+        results = []
+        
+        # 1. Reset Rclone
+        try:
+            subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5)
+            subprocess.run(["umount", "-f", "/mnt/torbox"], capture_output=True, timeout=5)
+            time.sleep(1)
+            
+            if os.path.exists("/app/rclone_config/rclone.conf"):
+                with open("/app/rclone_config/rclone.conf", 'r') as f:
+                    if "[torbox]" in f.read():
+                        subprocess.Popen([
+                            "rclone", "mount", "torbox:", "/mnt/torbox",
+                            "--config", "/app/rclone_config/rclone.conf",
+                            "--vfs-cache-mode", "full",
+                            "--vfs-cache-max-age", "24h",
+                            "--vfs-cache-max-size", "10G",
+                            "--allow-non-empty",
+                            "--allow-other",
+                            "--rc",
+                            "--rc-addr", "127.0.0.1:5572"
+                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        time.sleep(2)
+            
+            results.append("✓ Rclone reseteado")
+            print("[System] ✓ Rclone reseteado")
+        except Exception as e:
+            results.append(f"⚠️ Error rclone: {str(e)}")
+            print(f"[System] ⚠️ Error reseteando rclone: {e}")
+        
+        # 2. Reset Plex
+        try:
+            client = docker.from_env()
+            container = client.containers.get("plex")
+            container.restart()
+            results.append("✓ Plex reiniciado")
+            print("[System] ✓ Plex reiniciado")
+        except Exception as e:
+            results.append(f"⚠️ Error Plex: {str(e)}")
+            print(f"[System] ⚠️ Error reiniciando Plex: {e}")
+        
+        return {
+            "status": "ok",
+            "message": "Reset completo del sistema completado",
+            "results": results
+        }
+    except Exception as e:
+        print(f"[System] ✗ Error en reset total: {e}")
+        raise HTTPException(status_code=500, detail=f"Error en reset total: {str(e)}")
 
 @app.get("/api/notifications")
 def get_notifications():

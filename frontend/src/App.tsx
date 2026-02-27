@@ -1546,16 +1546,66 @@ export default function App() {
                                             Guardar Cambios
                                         </button>
 
-                                        <button
-                                            onClick={() => {
-                                                setShowSettings(false);
-                                                setSetupMode(true);
-                                                setSetupStep(1);
-                                            }}
-                                            className="w-full py-2 bg-zinc-900 border border-red-500/20 text-red-400 hover:text-red-300 hover:bg-red-500/10 font-bold rounded-lg transition-all text-sm"
-                                        >
-                                            Asistente de Reseteo Total
-                                        </button>
+                                        <div className="border-t border-zinc-800/50 pt-3">
+                                            <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide text-center mb-2">Mantenimiento del Sistema</h4>
+                                            
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        const res = await fetch(`${API_BASE}/system/reset-rclone`, { method: 'POST' });
+                                                        const data = await res.json();
+                                                        addLog('[System] ✓ Rclone reseteado: ' + data.message);
+                                                    } catch (e) {
+                                                        addLog('[System] ✗ Error reseteando rclone: ' + e.message);
+                                                    }
+                                                }}
+                                                className="w-full py-2 bg-zinc-900 border border-blue-500/20 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 font-bold rounded-lg transition-all text-sm mt-2"
+                                            >
+                                                🔄 Resetear Rclone
+                                            </button>
+                                            
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        const res = await fetch(`${API_BASE}/system/reset-plex`, { method: 'POST' });
+                                                        const data = await res.json();
+                                                        addLog('[System] ✓ Plex reiniciado: ' + data.message);
+                                                    } catch (e) {
+                                                        addLog('[System] ✗ Error reiniciando Plex: ' + e.message);
+                                                    }
+                                                }}
+                                                className="w-full py-2 bg-zinc-900 border border-purple-500/20 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 font-bold rounded-lg transition-all text-sm mt-2"
+                                            >
+                                                🎬 Reiniciar Plex
+                                            </button>
+                                            
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        const res = await fetch(`${API_BASE}/system/reset-all`, { method: 'POST' });
+                                                        const data = await res.json();
+                                                        addLog('[System] ✓ Sistema completo reseteado');
+                                                        data.results?.forEach(r => addLog('[System] ' + r));
+                                                    } catch (e) {
+                                                        addLog('[System] ✗ Error en reset total: ' + e.message);
+                                                    }
+                                                }}
+                                                className="w-full py-2 bg-zinc-900 border border-red-500/20 text-red-400 hover:text-red-300 hover:bg-red-500/10 font-bold rounded-lg transition-all text-sm mt-2"
+                                            >
+                                                ⚡ Resetear Todo
+                                            </button>
+
+                                            <button
+                                                onClick={() => {
+                                                    setShowSettings(false);
+                                                    setSetupMode(true);
+                                                    setSetupStep(1);
+                                                }}
+                                                className="w-full py-2 bg-zinc-900 border border-orange-500/20 text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 font-bold rounded-lg transition-all text-sm mt-2"
+                                            >
+                                                🔧 Asistente Completo
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
