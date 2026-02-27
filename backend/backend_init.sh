@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 echo "Starting Backend Init Script"
 
 if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
@@ -7,8 +8,8 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
     
     mkdir -p /mnt/torbox
     
-    echo "Mounting torbox WebDAV inside Backend container natively..."
-    rclone mount torbox: /mnt/torbox \
+    echo "[$(date)] Montando torbox WebDAV dentro del contenedor Backend..."
+    nohup rclone mount torbox: /mnt/torbox \
         --config /app/rclone_config/rclone.conf \
         --vfs-cache-mode full \
         --vfs-cache-max-age 24h \
@@ -21,10 +22,25 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
         --allow-non-empty \
         --allow-other \
         --rc \
-        --rc-addr 127.0.0.1:5572 &
+        --rc-addr 127.0.0.1:5572 \
+        > /tmp/rclone.log 2>&1 &
+    
+    RCLONE_PID=$!
+    echo "[$(date)] Rclone PID: $RCLONE_PID"
+    
+    # Esperar a que rclone se monte correctamente
+    sleep 3
+    if ps -p $RCLONE_PID > /dev/null; then
+        echo "[$(date)] ✓ Rclone montado exitosamente en /mnt/torbox"
+    else
+        echo "[$(date)] ✗ CRÍTICO: Rclone no se inició. Ver /tmp/rclone.log"
+        tail -20 /tmp/rclone.log
+        exit 1
+    fi
 else
-    echo "rclone.conf not completely set up yet. Skipping mount until configured."
+    echo "[$(date)] ADVERTENCIA: rclone.conf no está configurado. Continuando sin montaje."
 fi
 
-# Finally, start the FastAPI app
-exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Iniciar FastAPI (sin exec para mantener rclone vivo)
+echo "[$(date)] Iniciando FastAPI en puerto 8000..."
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
