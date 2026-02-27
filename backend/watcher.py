@@ -26,6 +26,15 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
         return None
 
     try:
+        # Listar raíz para diagnóstico
+        try:
+            root_items = os.listdir(mount_path)
+            log(f"[Watcher] Items en {mount_path}: {len(root_items)} elementos", on_log)
+            if len(root_items) > 0 and len(root_items) < 10:
+                log(f"[Watcher] Contenido: {root_items[:5]}", on_log)
+        except Exception as e:
+            log(f"[Watcher] No se puede listar {mount_path}: {e}", on_log)
+        
         # Búsqueda recursiva exhaustiva por el filename exacto
         for root, dirs, files in os.walk(mount_path):
             for f in files:
@@ -58,7 +67,7 @@ def watch_for_file(
 ) -> Optional[str]:
     """
     Busca un archivo en TorBox por filename exacto.
-    Prioridad: limpiar caché de rclone y reintentar.
+    Limpia agresivamente el caché de rclone en cada ciclo.
     """
     start_time = time.time()
     msg = f"Buscando archivo: '{expected_filename}'"
@@ -72,11 +81,7 @@ def watch_for_file(
     
     # Limpiar caché inicial agresivamente
     log(f"[Watcher] Limpiando caché de rclone...", on_log)
-    try:
-        subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5)
-        subprocess.run(["rclone", "rc", "cache/expire"], capture_output=True, timeout=5)
-    except Exception as e:
-        log(f"[Watcher] Advertencia: No se pudo limpiar caché inicial: {e}", on_log)
+    cleanup_rclone_cache(on_log)
 
     while time.time() - start_time < timeout_seconds:
         if get_status:
@@ -99,18 +104,29 @@ def watch_for_file(
 
         # Limpiar caché antes de reintentar
         log(f"[Watcher] No encontrado. Limpiando caché y reintentando...", on_log)
-        try:
-            subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5)
-            subprocess.run(["rclone", "rc", "cache/expire"], capture_output=True, timeout=5)
-        except Exception:
-            pass
+        cleanup_rclone_cache(on_log)
         
         time.sleep(10)
 
     return None
 
-    log(f"[Watcher] Timeout: '{expected_filename}' no apareció en {timeout_seconds}s.", on_log)
-    return None
+def cleanup_rclone_cache(on_log: Optional[callable] = None):
+    """Limpia el caché de rclone de múltiples formas."""
+    commands = [
+        (["rclone", "rc", "vfs/forget"], "vfs/forget"),
+        (["rclone", "rc", "cache/expire"], "cache/expire"),
+        (["rclone", "rc", "vfs/stats"], "vfs/stats (forzar lectura)"),
+    ]
+    
+    for cmd, desc in commands:
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=5, text=True)
+            if result.returncode == 0:
+                log(f"[Watcher] ✓ {desc} ejecutado", on_log)
+            else:
+                log(f"[Watcher] ⚠ {desc} retornó error: {result.stderr}", on_log)
+        except Exception as e:
+            log(f"[Watcher] ⚠ Error ejecutando {desc}: {e}", on_log)
 
 
 def start_watcher_thread(
