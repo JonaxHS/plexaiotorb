@@ -124,31 +124,28 @@ def watch_for_file(
         if on_status:
             on_status("Searching", f"Buscando '{expected_filename}'... ({elapsed}s)")
 
+        # Limpiar ANTES de buscar para evitar cache stale
+        if cycle_count > 0:  # Primera vez ya se limpió arriba
+            cleanup_rclone_cache(on_log, aggressive=(cycle_count % 50 == 0))
+
         found_path = find_file_path(expected_filename, title, mount_path, on_log, season, episode)
         if found_path:
             return found_path
 
         cycle_count += 1
         
-        # Limpieza agresiva cada 5 minutos (100 ciclos de 3 segundos)
-        is_aggressive = (cycle_count % 100 == 0)
-        
-        if is_aggressive:
-            log(f"[Watcher] Ejecutando limpieza AGRESIVA de caché (cada 5 min)...", on_log)
-        
-        log(f"[Watcher] No encontrado. Limpiando caché y reintentando...", on_log)
-        cleanup_rclone_cache(on_log, aggressive=is_aggressive)
-        
-        time.sleep(3)
+        # Esperar menos entre ciclos (reducido de 3s a 1s) para búsqueda más rápida
+        time.sleep(1)
 
     return None
 
 def cleanup_rclone_cache(on_log: Optional[callable] = None, aggressive: bool = False):
     """
-    Limpia el caché de rclone. Detecta y reporta si rclone rc no está activo.
-    Si aggressive=True, intenta remount completo.
+    Limpia el caché de rclone de múltiples formas para asegurar descubrimiento rápido.
+    Si aggressive=True, hace limpiezas más profundas.
     """
     try:
+        # 1. Forget: limpia metadata cacheada
         result = subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5, text=True)
         if result.returncode == 0:
             log(f"[Watcher] ✓ vfs/forget ejecutado", on_log)
@@ -159,22 +156,24 @@ def cleanup_rclone_cache(on_log: Optional[callable] = None, aggressive: bool = F
                 log(f"[Watcher] 🔴 Solución: Inicia rclone rc con: rclone rcd --rc-serve &", on_log)
             else:
                 log(f"[Watcher] ⚠️ vfs/forget error: {error_msg[:100]}", on_log)
+                return
+        
+        # 2. Clear-cache (si existe)
+        result = subprocess.run(["rclone", "rc", "vfs/clear-cache"], capture_output=True, timeout=5, text=True)
+        if result.returncode == 0:
+            log(f"[Watcher] ✓ vfs/clear-cache ejecutado", on_log)
+        
+        # 3. Flush writes para sincronizar
+        subprocess.run(["rclone", "rc", "vfs/forget", "mount=/mnt/torbox"], capture_output=True, timeout=5)
+        
+        if aggressive:
+            log(f"[Watcher] 🔄 Limpieza AGRESIVA: Flush y reset de stat caches...", on_log)
+            subprocess.run(["rclone", "rc", "cache/expire"], capture_output=True, timeout=5)
+            
     except subprocess.TimeoutExpired:
         log(f"[Watcher] ⚠️ rclone rc timeout", on_log)
     except Exception as e:
         log(f"[Watcher] ⚠️ Error conectando con rclone rc: {e}", on_log)
-    
-    # Limpieza agresiva: remount forzado
-    if aggressive:
-        try:
-            log(f"[Watcher] 🔄 Ejecutando umount y remount forzado de rclone...", on_log)
-            subprocess.run(["umount", "-f", "/mnt/torbox"], capture_output=True, timeout=5)
-            log(f"[Watcher] ✓ Mount desmontado", on_log)
-            time.sleep(2)
-            # No se puede remount desde acá, pero el aviso ayuda al admin
-            log(f"[Watcher] ⚠️ Necesita remount manual: rclone mount ...", on_log)
-        except Exception as e:
-            log(f"[Watcher] ⚠️ Error en remount agresivo: {e}", on_log)
 
 
 def start_watcher_thread(
