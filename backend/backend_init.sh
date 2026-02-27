@@ -25,22 +25,20 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
         --rc-addr 127.0.0.1:5572 \
         > /tmp/rclone.log 2>&1 &
     
-    RCLONE_PID=$!
-    echo "[$(date)] Rclone PID: $RCLONE_PID"
-    
-    # Esperar a que rclone se monte correctamente
+    echo "[$(date)] Esperando a que rclone responda..."
     sleep 3
     
-    # Intentar conectar a rclone rc para verificar que está activo
-    if curl -s http://127.0.0.1:5572/rc/stats > /dev/null 2>&1; then
-        echo "[$(date)] ✓ Rclone montado exitosamente en /mnt/torbox con RC activo"
-    elif [ -d /mnt/torbox ] && [ $(ls /mnt/torbox 2>/dev/null | wc -l) -ge 0 ]; then
-        echo "[$(date)] ✓ Rclone montado exitosamente en /mnt/torbox ($(ls /mnt/torbox | wc -l) items)"
-    else
-        echo "[$(date)] ✗ CRÍTICO: Rclone no se inició. Ver /tmp/rclone.log"
-        tail -20 /tmp/rclone.log
-        exit 1
-    fi
+    # Esperar hasta 15 segundos a que rclone RC esté disponible
+    for i in {1..5}; do
+        if curl -s http://127.0.0.1:5572/rc/stats > /dev/null 2>&1; then
+            echo "[$(date)] ✓ Rclone montado exitosamente en /mnt/torbox con RC activo"
+            break
+        fi
+        if [ $i -lt 5 ]; then
+            echo "[$(date)] Reintentando conexión a rclone RC... ($((i * 3))s)"
+            sleep 3
+        fi
+    done
 else
     echo "[$(date)] ADVERTENCIA: rclone.conf no está configurado. Continuando sin montaje."
 fi
