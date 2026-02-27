@@ -130,8 +130,8 @@ def watch_for_file(
 
         cycle_count += 1
         
-        # Limpieza agresiva cada 5 minutos (30 ciclos de 10 segundos)
-        is_aggressive = (cycle_count % 30 == 0)
+        # Limpieza agresiva cada 5 minutos (100 ciclos de 3 segundos)
+        is_aggressive = (cycle_count % 100 == 0)
         
         if is_aggressive:
             log(f"[Watcher] Ejecutando limpieza AGRESIVA de caché (cada 5 min)...", on_log)
@@ -139,7 +139,7 @@ def watch_for_file(
         log(f"[Watcher] No encontrado. Limpiando caché y reintentando...", on_log)
         cleanup_rclone_cache(on_log, aggressive=is_aggressive)
         
-        time.sleep(10)
+        time.sleep(3)
 
     return None
 
