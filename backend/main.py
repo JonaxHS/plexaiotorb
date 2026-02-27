@@ -112,106 +112,121 @@ def on_startup():
                     print(f"[Jobs] Error reanudando {job_id}: {e}")
 
 def start_rclone_monitor():
-    """Monitorea rclone cada 30 segundos y lo reinicia si se cae."""
+    """Monitorea rclone y se autorecupera si falla RC o el mount FUSE."""
+
+    def rc_alive(timeout: int = 3) -> bool:
+        try:
+            result = subprocess.run(
+                ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
+                capture_output=True,
+                timeout=timeout,
+                text=True
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def mount_alive() -> tuple[bool, str, int]:
+        try:
+            if not os.path.exists("/mnt/torbox"):
+                return False, "mount_path_missing", 0
+            if not os.path.ismount("/mnt/torbox"):
+                return False, "not_a_mount", 0
+            items = os.listdir("/mnt/torbox")
+            return True, "ok", len(items)
+        except OSError as e:
+            return False, f"mount_io_error: {e}", 0
+        except Exception as e:
+            return False, f"mount_error: {e}", 0
+
+    def restart_rclone(reason: str) -> bool:
+        print(f"[Rclone Monitor] ⚠️ Falla detectada ({reason}). Intentando autoreparación...")
+        try:
+            if not os.path.exists("/app/rclone_config/rclone.conf"):
+                print("[Rclone Monitor] ✗ No existe /app/rclone_config/rclone.conf")
+                return False
+            with open("/app/rclone_config/rclone.conf", "r") as f:
+                if "[torbox]" not in f.read():
+                    print("[Rclone Monitor] ✗ rclone.conf no tiene sección [torbox]")
+                    return False
+
+            subprocess.run(["pkill", "-f", "rclone mount torbox:"], timeout=5, capture_output=True)
+            time.sleep(1)
+            subprocess.run(["umount", "-f", "/mnt/torbox"], timeout=5, capture_output=True)
+            os.makedirs("/mnt/torbox", exist_ok=True)
+            time.sleep(1)
+
+            subprocess.Popen([
+                "rclone", "mount", "torbox:", "/mnt/torbox",
+                "--config", "/app/rclone_config/rclone.conf",
+                "--vfs-cache-mode", "writes",
+                "--vfs-cache-max-age", "24h",
+                "--vfs-cache-max-size", "50G",
+                "--vfs-read-chunk-size", "256M",
+                "--vfs-read-chunk-size-limit", "off",
+                "--buffer-size", "64M",
+                "--dir-cache-time", "100h",
+                "--attr-timeout", "100h",
+                "--vfs-read-wait", "5ms",
+                "--vfs-write-wait", "5ms",
+                "--vfs-fast-fingerprint",
+                "--allow-non-empty",
+                "--allow-other",
+                "--rc",
+                "--rc-addr", "127.0.0.1:5572",
+                "--log-level", "INFO",
+                "--log-file", "/tmp/rclone_monitor.log"
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            print("[Rclone Monitor] Rclone relanzado, validando salud...")
+            for attempt in range(30):
+                time.sleep(1)
+                if not rc_alive(2):
+                    continue
+                ok_mount, mount_reason, item_count = mount_alive()
+                if ok_mount:
+                    print(f"[Rclone Monitor] ✓ Autoreparado: RC OK + mount OK ({item_count} items)")
+                    return True
+                if attempt % 5 == 0:
+                    print(f"[Rclone Monitor] Esperando mount... {mount_reason} ({attempt+1}/30)")
+
+            print("[Rclone Monitor] ✗ Timeout autoreparando rclone. Ver /tmp/rclone_monitor.log")
+            return False
+        except Exception as e:
+            print(f"[Rclone Monitor] ✗ Excepción en autoreparación: {e}")
+            return False
+
     def monitor_rclone():
+        last_restart_at = 0.0
+        consecutive_failures = 0
+
         while True:
             try:
-                time.sleep(30)
-                
-                # Verificar si rclone RC está activo
-                try:
-                    result = subprocess.run(
-                        ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
-                        capture_output=True,
-                        timeout=5,
-                        text=True
-                    )
-                    if result.returncode != 0:
-                        raise Exception("Curl falló")
-                except Exception:
-                    print("[Rclone Monitor] ⚠️ Rclone RC no responde. Intentando reiniciar...")
-                    
-                    # Intentar matar el proceso de rclone
-                    try:
-                        subprocess.run(["pkill", "-f", "rclone mount"], timeout=5)
-                        time.sleep(2)
-                    except:
-                        pass
-                    
-                    # Desmount
-                    try:
-                        subprocess.run(["umount", "-f", "/mnt/torbox"], timeout=5, capture_output=True)
-                        time.sleep(2)
-                    except:
-                        pass
-                    
-                    # Remount
-                    try:
-                        if os.path.exists("/app/rclone_config/rclone.conf"):
-                            with open("/app/rclone_config/rclone.conf", 'r') as f:
-                                conf_content = f.read()
-                                if "[torbox]" not in conf_content:
-                                    print("[Rclone Monitor] ✗ rclone.conf no tiene configuración [torbox]")
-                                    continue
-                                
-                            # Abrir archivo de log para capturar errores
-                            log_file = open("/tmp/rclone_monitor.log", "a")
-                            log_file.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Reiniciando rclone...\n")
-                            log_file.flush()
-                            
-                            subprocess.Popen([
-                                "rclone", "mount", "torbox:", "/mnt/torbox",
-                                "--config", "/app/rclone_config/rclone.conf",
-                                "--vfs-cache-mode", "writes",
-                                "--vfs-cache-max-age", "24h",
-                                "--vfs-cache-max-size", "50G",
-                                "--vfs-read-chunk-size", "256M",
-                                "--vfs-read-chunk-size-limit", "off",
-                                "--buffer-size", "64M",
-                                "--dir-cache-time", "100h",
-                                "--attr-timeout", "100h",
-                                "--vfs-read-wait", "5ms",
-                                "--vfs-write-wait", "5ms",
-                                "--vfs-fast-fingerprint",
-                                "--allow-non-empty",
-                                "--allow-other",
-                                "--rc",
-                                "--rc-addr", "127.0.0.1:5572",
-                                "--log-level", "INFO"
-                            ], stdout=log_file, stderr=subprocess.STDOUT)
-                            print("[Rclone Monitor] Rclone relanzado, esperando a que monte... (ver /tmp/rclone_monitor.log)")
-                            
-                            # Esperar A QUE MONTE (hasta 20 segundos)
-                            for attempt in range(20):
-                                time.sleep(1)
-                                try:
-                                    # Verificar que RC responda
-                                    test = subprocess.run(
-                                        ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
-                                        capture_output=True,
-                                        timeout=3,
-                                        text=True
-                                    )
-                                    if test.returncode == 0:
-                                        # Verificar que hay archivos en el mount
-                                        if os.path.exists("/mnt/torbox"):
-                                            item_count = len(os.listdir("/mnt/torbox"))
-                                            if item_count > 0:
-                                                print(f"[Rclone Monitor] ✓ Rclone montado exitosamente ({item_count} items)")
-                                                break
-                                            else:
-                                                print(f"[Rclone Monitor] RC activo, esperando items... ({attempt+1}/20)")
-                                        else:
-                                            print(f"[Rclone Monitor] /mnt/torbox no existe ({attempt+1}/20)")
-                                except Exception as e:
-                                    if attempt % 5 == 0:  # Log cada 5 intentos
-                                        print(f"[Rclone Monitor] Esperando RC... ({attempt+1}/20): {e}")
-                            else:
-                                print("[Rclone Monitor] ✗ Timeout esperando rclone (20s). Ver /tmp/rclone_monitor.log para detalles")
-                                        
-                    except Exception as e:
-                        print(f"[Rclone Monitor] ✗ Error relanzando rclone: {e}")
-                        
+                time.sleep(15)
+                rc_ok = rc_alive(3)
+                mount_ok, mount_reason, item_count = mount_alive()
+
+                if rc_ok and mount_ok:
+                    consecutive_failures = 0
+                    continue
+
+                consecutive_failures += 1
+                reason = "rc_down" if not rc_ok else mount_reason
+
+                cooldown = 20
+                since_restart = time.time() - last_restart_at
+                if since_restart < cooldown:
+                    wait_left = int(cooldown - since_restart)
+                    print(f"[Rclone Monitor] ⚠️ Fallo detectado ({reason}), en cooldown {wait_left}s")
+                    continue
+
+                repaired = restart_rclone(reason)
+                last_restart_at = time.time()
+
+                if not repaired and consecutive_failures >= 3:
+                    print("[Rclone Monitor] ⚠️ Varias fallas seguidas, esperando 60s antes del próximo intento")
+                    time.sleep(60)
+
             except Exception as e:
                 print(f"[Rclone Monitor] ✗ Error en monitor: {e}")
                 time.sleep(5)
@@ -219,7 +234,7 @@ def start_rclone_monitor():
     # Iniciar monitor en thread daemon
     monitor_thread = threading.Thread(target=monitor_rclone, daemon=True)
     monitor_thread.start()
-    print("[Rclone Monitor] ✓ Monitoreo de rclone iniciado (verifica cada 30s)")
+    print("[Rclone Monitor] ✓ Monitoreo de rclone iniciado (verifica cada 15s)")
 
 TMDB_API_KEY = config.get("tmdb", {}).get("api_key", "")
 AIOSTREAMS_URL = config.get("aiostreams", {}).get("url", "")
@@ -392,14 +407,26 @@ def update_settings(req: SettingsUpdate):
 @app.get("/api/rclone/status")
 def rclone_status():
     try:
-        # FUSE mount test
-        if os.path.ismount("/mnt/torbox"):
-            # try to list to ensure it's not a broken pipe
-            os.listdir("/mnt/torbox")
-            return {"status": "connected"}
-    except:
-        pass
-    return {"status": "disconnected"}
+        rc = subprocess.run(
+            ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
+            capture_output=True,
+            timeout=2,
+            text=True
+        )
+        rc_ok = rc.returncode == 0
+
+        if not os.path.exists("/mnt/torbox"):
+            return {"status": "disconnected", "reason": "mount_path_missing", "rc": rc_ok}
+        if not os.path.ismount("/mnt/torbox"):
+            return {"status": "disconnected", "reason": "not_a_mount", "rc": rc_ok}
+
+        item_count = len(os.listdir("/mnt/torbox"))
+        if not rc_ok:
+            return {"status": "degraded", "reason": "rc_down_mount_alive", "items": item_count, "rc": False}
+
+        return {"status": "connected", "items": item_count, "rc": True}
+    except Exception as e:
+        return {"status": "disconnected", "reason": str(e), "rc": False}
 
 @app.get("/api/logs")
 def get_global_logs():
