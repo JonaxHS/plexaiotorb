@@ -2,11 +2,15 @@
 set -e
 echo "Starting Backend Init Script"
 
+# Crear directorio incluso si no vamos a montar
+mkdir -p /mnt/torbox
+echo "[$(date)] ✓ Directorio /mnt/torbox creado"
+
 if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
+    echo "[$(date)] ✓ Configuración [torbox] encontrada en rclone.conf"
+    
     # Unmount if already mounted
     umount -f /mnt/torbox 2>/dev/null || true
-    
-    mkdir -p /mnt/torbox
     
     echo "[$(date)] Montando torbox WebDAV dentro del contenedor Backend..."
     nohup rclone mount torbox: /mnt/torbox \
@@ -43,15 +47,21 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
             else
                 echo "[$(date)] RC activo pero esperando items... ($((i * 2))s)"
             fi
+        else
+            echo "[$(date)] RC no responde aún... intento $i/10"
         fi
         if [ $i -lt 10 ]; then
             sleep 2
         fi
     done
 else
-    echo "[$(date)] ADVERTENCIA: rclone.conf no está configurado. Continuando sin montaje."
-fi
-
-# Iniciar FastAPI (sin exec para mantener rclone vivo)
-echo "[$(date)] Iniciando FastAPI en puerto 8000..."
+    echo "[$(date)] ⚠️ ADVERTENCIA: rclone.conf no contiene [torbox]. Verificar:"
+    echo "[$(date)]   - /app/rclone_config/rclone.conf existe?"
+    if [ -f /app/rclone_config/rclone.conf ]; then
+        echo "[$(date)]   ✓ Archivo existe"
+        echo "[$(date)]   Contenido:"
+        cat /app/rclone_config/rclone.conf | head -20
+    else
+        echo "[$(date)]   ✗ Archivo NO existe"
+    fi
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
