@@ -16,83 +16,27 @@ def log(msg: str, on_log: Optional[callable] = None):
 
 def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", on_log: Optional[callable] = None, season: int = None, episode: int = None) -> Optional[str]:
     """
-    Busca un archivo en TorBox usando BÚSQUEDA EXACTA del nombre del archivo.
-    Prioridad: Raíz > Carpetas por título > Resto de carpetas.
+    Busca un archivo en TorBox usando BÚSQUEDA EXACTA ÚNICA del filename.
+    No intenta alternativas, solo busca exactamente lo que pide.
     """
     expected_lower = expected_filename.lower()
-    expected_no_ext = os.path.splitext(expected_lower)[0]
-    
-    # Limpiar el título: remover información de S##E##
-    title_clean = re.sub(r'\s*[sS]\d+[eE]\d+\s*', ' ', title).strip()
     
     if not os.path.exists(mount_path):
         log(f"[Watcher] ERROR: Directorio de montaje no existe: {mount_path}", on_log)
         return None
 
     try:
-        raw_items = os.listdir(mount_path)
-        log(f"[Watcher] Escaneando {mount_path}: {len(raw_items)} items", on_log)
-    except Exception as e:
-        log(f"[Watcher] ERROR listando {mount_path}: {e}", on_log)
-        return None
-
-    # PASO 1: Búsqueda EXACTA en la raíz
-    log(f"[Watcher] PASO 1: Buscando archivo exacto en raíz...", on_log)
-    for item in raw_items:
-        if item.lower() == expected_lower:
-            item_path = os.path.join(mount_path, item)
-            if os.path.isfile(item_path):
-                log(f"[Watcher] ✓ ENCONTRADO EN RAÍZ: {item_path}", on_log)
-                return item_path
-            else:
-                log(f"[Watcher] {item} es directorio, no archivo", on_log)
-
-    # PASO 2: Búsqueda recursiva desde raíz (todas las subcarpetas, sin límite de profundidad)
-    log(f"[Watcher] PASO 2: Buscando recursivamente desde {mount_path}...", on_log)
-    try:
+        # Búsqueda recursiva exhaustiva por el filename exacto
         for root, dirs, files in os.walk(mount_path):
-            # Limitar profundidad solo si está muy profundo
-            current_depth = root[len(mount_path):].count(os.sep)
-            if current_depth > 10:
-                log(f"[Watcher] Profundidad máxima alcanzada en: {root}", on_log)
-                dirs.clear()
-                continue
-                
             for f in files:
-                f_lower = f.lower()
-                f_no_ext = os.path.splitext(f_lower)[0]
-                
-                # Búsqueda exacta: nombre completo o sin extensión
-                if f_lower == expected_lower or f_no_ext == expected_no_ext:
+                if f.lower() == expected_lower:
                     full_path = os.path.join(root, f)
-                    log(f"[Watcher] ✓ ENCONTRADO RECURSIVAMENTE: {full_path}", on_log)
+                    log(f"[Watcher] ✓ ENCONTRADO: {full_path}", on_log)
                     return full_path
     except Exception as e:
-        log(f"[Watcher] ERROR en búsqueda recursiva: {e}", on_log)
+        log(f"[Watcher] ERROR en búsqueda: {e}", on_log)
 
-    # PASO 3: Búsqueda por patrón S##E## como último recurso
-    if season is not None and episode is not None:
-        pattern = f"s{season:02d}e{episode:02d}".lower()
-        log(f"[Watcher] PASO 3: Búsqueda flexible por patrón S##E##: {pattern}", on_log)
-        
-        try:
-            for root, dirs, files in os.walk(mount_path):
-                current_depth = root[len(mount_path):].count(os.sep)
-                if current_depth > 10:
-                    dirs.clear()
-                    continue
-                    
-                for f in files:
-                    f_lower = f.lower()
-                    # Buscar el patrón sin separadores
-                    if pattern in f_lower.replace(' ', '').replace('_', '').replace('-', '').replace('.', ''):
-                        full_path = os.path.join(root, f)
-                        log(f"[Watcher] ✓ ENCONTRADO POR PATRÓN: {full_path}", on_log)
-                        return full_path
-        except Exception as e:
-            log(f"[Watcher] ERROR en búsqueda por patrón: {e}", on_log)
-
-    log(f"[Watcher] ARCHIVO NO ENCONTRADO: '{expected_filename}'", on_log)
+    log(f"[Watcher] ARCHIVO NO ENCONTRADO: '{expected_filename}' en {mount_path}", on_log)
     return None
 
 def check_file_exists(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", season: int = None, episode: int = None) -> Optional[str]:
@@ -113,8 +57,8 @@ def watch_for_file(
     on_log: Optional[callable] = None
 ) -> Optional[str]:
     """
-    Busca un archivo en TorBox usando el nombre exacto del archivo
-    provisto por AIOStreams (o extraído de la URL).
+    Busca un archivo en TorBox por filename exacto.
+    Prioridad: limpiar caché de rclone y reintentar.
     """
     start_time = time.time()
     msg = f"Buscando archivo: '{expected_filename}'"
@@ -122,9 +66,17 @@ def watch_for_file(
     if on_status:
         on_status("Searching", msg)
 
-    # Esperar un poco inicial para que el archivo sea montado por rclone
-    log(f"[Watcher] Esperando que el archivo sea montado en rclone...", on_log)
-    time.sleep(5)
+    # Esperar a que rclone monte el archivo
+    log(f"[Watcher] Aguardando montaje en rclone...", on_log)
+    time.sleep(3)
+    
+    # Limpiar caché inicial agresivamente
+    log(f"[Watcher] Limpiando caché de rclone...", on_log)
+    try:
+        subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5)
+        subprocess.run(["rclone", "rc", "cache/expire"], capture_output=True, timeout=5)
+    except Exception as e:
+        log(f"[Watcher] Advertencia: No se pudo limpiar caché inicial: {e}", on_log)
 
     while time.time() - start_time < timeout_seconds:
         if get_status:
@@ -136,15 +88,8 @@ def watch_for_file(
                 time.sleep(5)
                 continue
 
-        # Limpiar caché de rclone antes de cada búsqueda
-        try:
-            subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=3)
-            log(f"[Watcher] Caché de rclone limpiado", on_log)
-        except Exception as e:
-            log(f"[Watcher] Error limpiando caché: {e}", on_log)
-
         elapsed = int(time.time() - start_time)
-        log(f"[Watcher] Ciclo de búsqueda... ({elapsed}s)", on_log)
+        log(f"[Watcher] Ciclo {elapsed}s: Buscando '{expected_filename}'...", on_log)
         if on_status:
             on_status("Searching", f"Buscando '{expected_filename}'... ({elapsed}s)")
 
@@ -152,7 +97,14 @@ def watch_for_file(
         if found_path:
             return found_path
 
-        log(f"[Watcher] Archivo no encontrado. Esperando...", on_log)
+        # Limpiar caché antes de reintentar
+        log(f"[Watcher] No encontrado. Limpiando caché y reintentando...", on_log)
+        try:
+            subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5)
+            subprocess.run(["rclone", "rc", "cache/expire"], capture_output=True, timeout=5)
+        except Exception:
+            pass
+        
         time.sleep(10)
 
     return None
