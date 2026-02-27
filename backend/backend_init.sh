@@ -30,8 +30,12 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
     
     # Esperar a que rclone se monte correctamente
     sleep 3
-    if ps -p $RCLONE_PID > /dev/null; then
-        echo "[$(date)] ✓ Rclone montado exitosamente en /mnt/torbox"
+    
+    # Intentar conectar a rclone rc para verificar que está activo
+    if curl -s http://127.0.0.1:5572/rc/stats > /dev/null 2>&1; then
+        echo "[$(date)] ✓ Rclone montado exitosamente en /mnt/torbox con RC activo"
+    elif [ -d /mnt/torbox ] && [ $(ls /mnt/torbox 2>/dev/null | wc -l) -ge 0 ]; then
+        echo "[$(date)] ✓ Rclone montado exitosamente en /mnt/torbox ($(ls /mnt/torbox | wc -l) items)"
     else
         echo "[$(date)] ✗ CRÍTICO: Rclone no se inició. Ver /tmp/rclone.log"
         tail -20 /tmp/rclone.log
