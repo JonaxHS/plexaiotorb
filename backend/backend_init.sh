@@ -36,24 +36,29 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
     echo "[$(date)] Esperando a que rclone responda..."
     sleep 5
     
-    # Esperar hasta 60 segundos a que rclone RC esté disponible Y tenga items
-    for i in {1..30}; do
+    # Esperar hasta 20 segundos a que rclone RC esté disponible
+    for i in {1..10}; do
         if curl -s http://127.0.0.1:5572/rc/stats > /dev/null 2>&1; then
-            # RC responde, verificar que haya items en el mount
+            # RC responde, verificar items disponibles (advisory only)
             item_count=$(ls /mnt/torbox 2>/dev/null | wc -l)
             if [ "$item_count" -gt 0 ]; then
-                echo "[$(date)] ✓ Rclone montado exitosamente en /mnt/torbox con RC activo ($item_count items)"
-                break
+                echo "[$(date)] ✓ Rclone montado con $item_count items visibles"
             else
-                echo "[$(date)] RC activo pero esperando items... ($((i * 2))s)"
+                echo "[$(date)] ✓ Rclone RC activo (mount vacío o cargando)"
             fi
+            break
         else
-            echo "[$(date)] RC no responde aún... intento $i/30"
+            echo "[$(date)] RC no responde aún... intento $i/10"
         fi
-        if [ $i -lt 30 ]; then
+        if [ $i -lt 10 ]; then
             sleep 2
         fi
     done
+    
+    # Advertencia final si RC nunca respondió
+    if ! curl -s http://127.0.0.1:5572/rc/stats > /dev/null 2>&1; then
+        echo "[$(date)] ⚠️ ADVERTENCIA: RC no respondió tras 20s - el monitor intentará recuperarlo"
+    fi
 else
     echo "[$(date)] ⚠️ ADVERTENCIA: rclone.conf no contiene [torbox]. Verificar:"
     echo "[$(date)]   - /app/rclone_config/rclone.conf existe?"
