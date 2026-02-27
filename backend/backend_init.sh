@@ -36,8 +36,8 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
     echo "[$(date)] Esperando a que rclone responda..."
     sleep 5
     
-    # Esperar hasta 20 segundos a que rclone RC esté disponible Y tenga items
-    for i in {1..10}; do
+    # Esperar hasta 60 segundos a que rclone RC esté disponible Y tenga items
+    for i in {1..30}; do
         if curl -s http://127.0.0.1:5572/rc/stats > /dev/null 2>&1; then
             # RC responde, verificar que haya items en el mount
             item_count=$(ls /mnt/torbox 2>/dev/null | wc -l)
@@ -48,9 +48,9 @@ if grep -q "\[torbox\]" /app/rclone_config/rclone.conf 2>/dev/null; then
                 echo "[$(date)] RC activo pero esperando items... ($((i * 2))s)"
             fi
         else
-            echo "[$(date)] RC no responde aún... intento $i/10"
+            echo "[$(date)] RC no responde aún... intento $i/30"
         fi
-        if [ $i -lt 10 ]; then
+        if [ $i -lt 30 ]; then
             sleep 2
         fi
     done
