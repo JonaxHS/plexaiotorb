@@ -146,49 +146,65 @@ def start_rclone_monitor():
                     try:
                         if os.path.exists("/app/rclone_config/rclone.conf"):
                             with open("/app/rclone_config/rclone.conf", 'r') as f:
-                                if "[torbox]" in f.read():
-                                    subprocess.Popen([
-                                        "rclone", "mount", "torbox:", "/mnt/torbox",
-                                        "--config", "/app/rclone_config/rclone.conf",
-                                        "--vfs-cache-mode", "writes",
-                                        "--vfs-cache-max-age", "24h",
-                                        "--vfs-cache-max-size", "50G",
-                                        "--vfs-read-chunk-size", "256M",
-                                        "--vfs-read-chunk-size-limit", "off",
-                                        "--buffer-size", "64M",
-                                        "--dir-cache-time", "100h",
-                                        "--attr-timeout", "100h",
-                                        "--vfs-read-wait-time", "5ms",
-                                        "--vfs-write-wait-time", "5ms",
-                                        "--vfs-fast-fingerprint", "true",
-                                        "--allow-non-empty",
-                                        "--allow-other",
-                                        "--rc",
-                                        "--rc-addr", "127.0.0.1:5572",
-                                        "--log-level", "INFO"
-                                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                                    print("[Rclone Monitor] Rclone relanzado, esperando a que monte...")
-                                    
-                                    # Esperar A QUE MONTE (hasta 10 segundos)
-                                    for attempt in range(10):
-                                        time.sleep(1)
-                                        try:
-                                            # Verificar que RC responda
-                                            test = subprocess.run(
-                                                ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
-                                                capture_output=True,
-                                                timeout=3,
-                                                text=True
-                                            )
-                                            if test.returncode == 0:
-                                                # Verificar que hay archivos en el mount
-                                                item_count = len(os.listdir("/mnt/torbox"))
+                                conf_content = f.read()
+                                if "[torbox]" not in conf_content:
+                                    print("[Rclone Monitor] ✗ rclone.conf no tiene configuración [torbox]")
+                                    continue
+                                
+                            # Abrir archivo de log para capturar errores
+                            log_file = open("/tmp/rclone_monitor.log", "a")
+                            log_file.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] Reiniciando rclone...\n")
+                            log_file.flush()
+                            
+                            subprocess.Popen([
+                                "rclone", "mount", "torbox:", "/mnt/torbox",
+                                "--config", "/app/rclone_config/rclone.conf",
+                                "--vfs-cache-mode", "writes",
+                                "--vfs-cache-max-age", "24h",
+                                "--vfs-cache-max-size", "50G",
+                                "--vfs-read-chunk-size", "256M",
+                                "--vfs-read-chunk-size-limit", "off",
+                                "--buffer-size", "64M",
+                                "--dir-cache-time", "100h",
+                                "--attr-timeout", "100h",
+                                "--vfs-read-wait", "5ms",
+                                "--vfs-write-wait", "5ms",
+                                "--vfs-fast-fingerprint", "true",
+                                "--allow-non-empty",
+                                "--allow-other",
+                                "--rc",
+                                "--rc-addr", "127.0.0.1:5572",
+                                "--log-level", "INFO"
+                            ], stdout=log_file, stderr=subprocess.STDOUT)
+                            print("[Rclone Monitor] Rclone relanzado, esperando a que monte... (ver /tmp/rclone_monitor.log)")
+                            
+                            # Esperar A QUE MONTE (hasta 20 segundos)
+                            for attempt in range(20):
+                                time.sleep(1)
+                                try:
+                                    # Verificar que RC responda
+                                    test = subprocess.run(
+                                        ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
+                                        capture_output=True,
+                                        timeout=3,
+                                        text=True
+                                    )
+                                    if test.returncode == 0:
+                                        # Verificar que hay archivos en el mount
+                                        if os.path.exists("/mnt/torbox"):
+                                            item_count = len(os.listdir("/mnt/torbox"))
+                                            if item_count > 0:
                                                 print(f"[Rclone Monitor] ✓ Rclone montado exitosamente ({item_count} items)")
                                                 break
-                                        except:
-                                            pass
-                                    else:
-                                        print("[Rclone Monitor] ✗ Timeout esperando rclone")
+                                            else:
+                                                print(f"[Rclone Monitor] RC activo, esperando items... ({attempt+1}/20)")
+                                        else:
+                                            print(f"[Rclone Monitor] /mnt/torbox no existe ({attempt+1}/20)")
+                                except Exception as e:
+                                    if attempt % 5 == 0:  # Log cada 5 intentos
+                                        print(f"[Rclone Monitor] Esperando RC... ({attempt+1}/20): {e}")
+                            else:
+                                print("[Rclone Monitor] ✗ Timeout esperando rclone (20s). Ver /tmp/rclone_monitor.log para detalles")
                                         
                     except Exception as e:
                         print(f"[Rclone Monitor] ✗ Error relanzando rclone: {e}")
