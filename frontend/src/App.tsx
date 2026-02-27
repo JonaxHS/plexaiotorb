@@ -120,6 +120,8 @@ export default function App() {
     const [currentPage, setCurrentPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const observerTarget = useRef<HTMLDivElement>(null);
+    const selectedItemRef = useRef<any>(null);
+    const selectedPersonRef = useRef<any>(null);
 
     // -- UX Optimization State --
     const [episodeSyncStatus, setEpisodeSyncStatus] = useState<Record<number, 'synced' | 'pending' | 'none'>>({});
@@ -296,11 +298,19 @@ export default function App() {
         return () => clearTimeout(searchTimeout.current);
     }, [query]);
 
+    useEffect(() => {
+        selectedItemRef.current = selectedItem;
+    }, [selectedItem]);
+
+    useEffect(() => {
+        selectedPersonRef.current = selectedPerson;
+    }, [selectedPerson]);
+
     // Intersection Observer for Infinite Scroll
     useEffect(() => {
         const observer = new IntersectionObserver(
             entries => {
-                if (entries[0].isIntersecting && hasMore && !discoveryLoading && !selectedItem && !selectedPerson) {
+                if (entries[0].isIntersecting && hasMore && !discoveryLoading && !selectedItemRef.current && !selectedPersonRef.current) {
                     fetchDiscovery(discoveryType, selectedGenre, currentPage + 1, true, !!query);
                 }
             },
@@ -318,7 +328,7 @@ export default function App() {
             observer.disconnect();
             document.body.classList.remove('overflow-hidden');
         };
-    }, [hasMore, discoveryLoading, currentPage, discoveryType, selectedGenre, query, selectedItem, selectedPerson]);
+    }, [hasMore, discoveryLoading, currentPage, discoveryType, selectedGenre, query]);
 
     // Fetch Live Settings when Modal Opens
     useEffect(() => {
