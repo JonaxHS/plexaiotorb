@@ -71,7 +71,7 @@ def on_startup():
     
     # Esperar a que rclone esté montado antes de reanudar búsquedas
     print("[Startup] Esperando a que rclone esté montado...")
-    for attempt in range(30):  # 30 intentos x 1s = 30s max
+    for attempt in range(60):  # 60 intentos x 1s = 60s max
         try:
             result = subprocess.run(
                 ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
@@ -81,13 +81,16 @@ def on_startup():
             )
             if result.returncode == 0 and os.path.exists("/mnt/torbox"):
                 item_count = len(os.listdir("/mnt/torbox"))
-                print(f"[Startup] ✓ Rclone montado y listo ({item_count} items)")
-                break
+                if item_count > 0:
+                    print(f"[Startup] ✓ Rclone montado y listo ({item_count} items)")
+                    break
+                else:
+                    print(f"[Startup] RC activo pero esperando items... ({attempt}s)")
         except:
             pass
         time.sleep(1)
     else:
-        print("[Startup] ⚠️ Rclone no respondió después de 30s. Continuando sin reanudar búsquedas.")
+        print("[Startup] ⚠️ Rclone no respondió después de 60s. Continuando sin reanudar búsquedas.")
         return
     
     # Reanudar búsquedas pendientes (SOLO si rclone está montado)
