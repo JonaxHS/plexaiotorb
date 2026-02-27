@@ -897,6 +897,41 @@ def delete_job(job_id: str):
         return {"status": "ok"}
     raise HTTPException(status_code=404, detail="Trabajo no encontrado")
 
+@app.delete("/api/downloads/clear/completed")
+def clear_completed_jobs():
+    """Elimina todos los trabajos completados"""
+    completed_ids = [job_id for job_id, job in active_jobs.items() if job.get("status") == "Completed"]
+    for job_id in completed_ids:
+        active_jobs.pop(job_id, None)
+        job_logs.pop(job_id, None)
+    save_jobs()
+    return {"status": "ok", "deleted": len(completed_ids), "message": f"{len(completed_ids)} trabajos completados eliminados"}
+
+@app.delete("/api/downloads/clear/errors")
+def clear_error_jobs():
+    """Elimina todos los trabajos con error o cancelados"""
+    error_ids = [job_id for job_id, job in active_jobs.items() if job.get("status") in ["Error", "Cancelled"]]
+    for job_id in error_ids:
+        active_jobs.pop(job_id, None)
+        job_logs.pop(job_id, None)
+    save_jobs()
+    return {"status": "ok", "deleted": len(error_ids), "message": f"{len(error_ids)} trabajos con error eliminados"}
+
+@app.delete("/api/downloads/clear/all")
+def clear_all_jobs():
+    """Elimina TODOS los trabajos activos"""
+    total = len(active_jobs)
+    # Cancelar trabajos activos primero
+    for job_id in list(active_jobs.keys()):
+        if active_jobs[job_id].get("status") not in ["Completed", "Error", "Cancelled"]:
+            active_jobs[job_id]["status"] = "Cancelled"
+    # Esperar un momento y luego limpiar todo
+    time.sleep(1)
+    active_jobs.clear()
+    job_logs.clear()
+    save_jobs()
+    return {"status": "ok", "deleted": total, "message": f"Todos los trabajos eliminados ({total})"}
+
 @app.get("/api/jobs/{job_id}/logs")
 def get_job_logs(job_id: str, since: int = 0):
     """Devuelve logs detallados de un trabajo específico desde la línea `since`."""

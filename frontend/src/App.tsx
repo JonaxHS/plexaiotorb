@@ -461,6 +461,42 @@ export default function App() {
         try { await fetch(`${API_BASE}/downloads/${id}`, { method: "DELETE" }); } catch (e) { }
     };
 
+    const handleClearCompletedJobs = async () => {
+        if (!confirm("¿Eliminar todos los trabajos completados?")) return;
+        try {
+            const res = await fetch(`${API_BASE}/downloads/clear/completed`, { method: "DELETE" });
+            const data = await res.json();
+            addLog(`✓ ${data.message}`);
+            showNotification(data.message, 'success');
+        } catch (e) {
+            addLog(`✗ Error eliminando trabajos completados`);
+        }
+    };
+
+    const handleClearErrorJobs = async () => {
+        if (!confirm("¿Eliminar todos los trabajos con error?")) return;
+        try {
+            const res = await fetch(`${API_BASE}/downloads/clear/errors`, { method: "DELETE" });
+            const data = await res.json();
+            addLog(`✓ ${data.message}`);
+            showNotification(data.message, 'success');
+        } catch (e) {
+            addLog(`✗ Error eliminando trabajos con error`);
+        }
+    };
+
+    const handleClearAllJobs = async () => {
+        if (!confirm("⚠️ ¿ELIMINAR TODOS LOS TRABAJOS? Esta acción no se puede deshacer.")) return;
+        try {
+            const res = await fetch(`${API_BASE}/downloads/clear/all`, { method: "DELETE" });
+            const data = await res.json();
+            addLog(`✓ ${data.message}`);
+            showNotification('Todos los trabajos eliminados', 'success');
+        } catch (e) {
+            addLog(`✗ Error eliminando todos los trabajos`);
+        }
+    };
+
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!query.trim()) return;
@@ -1366,10 +1402,41 @@ export default function App() {
                                         </h2>
                                         <p className="text-zinc-500 text-sm mt-1">Supervisa y gestiona el estado de tus descargas en tiempo real.</p>
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 items-center">
                                         <span className="bg-zinc-800 text-zinc-400 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest border border-zinc-700">
                                             {Object.keys(activeDownloads).length} Trabajos
                                         </span>
+                                        
+                                        {/* Botones de limpieza masiva */}
+                                        {Object.keys(activeDownloads).length > 0 && (
+                                            <>
+                                                {Object.values(activeDownloads).some((job: any) => job.status === 'Completed') && (
+                                                    <button
+                                                        onClick={handleClearCompletedJobs}
+                                                        className="px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 text-[10px] font-bold rounded-lg transition-all border border-green-500/30 flex items-center gap-1.5 uppercase tracking-wide"
+                                                        title="Eliminar trabajos completados"
+                                                    >
+                                                        <CheckCircle2 className="w-3 h-3" /> Limpiar OK
+                                                    </button>
+                                                )}
+                                                {Object.values(activeDownloads).some((job: any) => job.status === 'Error' || job.status === 'Cancelled') && (
+                                                    <button
+                                                        onClick={handleClearErrorJobs}
+                                                        className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold rounded-lg transition-all border border-red-500/30 flex items-center gap-1.5 uppercase tracking-wide"
+                                                        title="Eliminar trabajos con error"
+                                                    >
+                                                        <XCircle className="w-3 h-3" /> Limpiar Errores
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={handleClearAllJobs}
+                                                    className="px-3 py-1.5 bg-zinc-900 hover:bg-red-500/20 text-zinc-500 hover:text-red-400 text-[10px] font-bold rounded-lg transition-all border border-zinc-700 hover:border-red-500/30 flex items-center gap-1.5 uppercase tracking-wide"
+                                                    title="Eliminar todos los trabajos"
+                                                >
+                                                    <Trash2 className="w-3 h-3" /> Limpiar Todo
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
 
