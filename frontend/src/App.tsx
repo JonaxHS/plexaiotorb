@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Film, Tv, Play, Pause, Plus, TerminalSquare, X, Settings, Activity, CheckCircle2, XCircle, Trash2, Link as LinkIcon, Zap, Download, FileText } from 'lucide-react';
+import { Search, Film, Tv, Play, Pause, Plus, TerminalSquare, X, Settings, Activity, CheckCircle2, XCircle, Trash2, Link as LinkIcon, Zap, Download, FileText, AlertTriangle } from 'lucide-react';
 import TorBoxBrowser from './components/TorBoxBrowser';
 
 // Si accedes desde otro equipo en tu red (ej. iPad), usa la IP local en vez de localhost.
@@ -94,6 +94,7 @@ export default function App() {
     const [logs, setLogs] = useState<string[]>(["[System] Conectado a PlexAioTorb GUI."]);
     const [globalLogs, setGlobalLogs] = useState<string[]>([]);
     const [rcloneStatus, setRcloneStatus] = useState<string>("checking");
+    const [rcloneReason, setRcloneReason] = useState<string>("");
     const [showSettings, setShowSettings] = useState(false);
     const [notifications, setNotifications] = useState<string[]>([]);
     const [activeDownloads, setActiveDownloads] = useState<Record<string, any>>({});
@@ -105,6 +106,7 @@ export default function App() {
     const [expandedJobLog, setExpandedJobLog] = useState<string | null>(null); // Currently expanded job
     const jobLogSinceRef = useRef<Record<string, number>>({});               // Cursor per job
     const jobLogsEndRef = useRef<HTMLDivElement>(null);
+    const lastRcloneStatusRef = useRef<string>("checking");
     const [streamCacheStatuses, setStreamCacheStatuses] = useState<Record<string, boolean>>({}); // Cache status per stream URL
 
     // -- Live Settings State --
@@ -160,8 +162,12 @@ export default function App() {
             fetch(`${API_BASE}/rclone/status`)
                 .then(r => r.json())
                 .then(d => {
-                    setRcloneStatus(d.status);
-                }).catch(() => setRcloneStatus("disconnected"));
+                    setRcloneStatus(d.status || "disconnected");
+                    setRcloneReason(d.reason || "");
+                }).catch(() => {
+                    setRcloneStatus("disconnected");
+                    setRcloneReason("backend_unreachable");
+                });
 
             // Polling de notificaciones
             fetch(`${API_BASE}/notifications`)
@@ -184,6 +190,20 @@ export default function App() {
         }, 5000);
         return () => clearInterval(interval);
     }, [setupMode, checkingStatus]);
+
+    useEffect(() => {
+        if (rcloneStatus === lastRcloneStatusRef.current) return;
+
+        if (rcloneStatus === 'degraded') {
+            setGlobalNotification({ message: `Rclone degradado (${rcloneReason || 'sin detalle'}). Se intentará autoreparación automática.`, type: 'error' });
+        } else if (rcloneStatus === 'disconnected') {
+            setGlobalNotification({ message: 'Rclone desconectado. Iniciando autoreparación automática.', type: 'error' });
+        } else if (rcloneStatus === 'connected' && (lastRcloneStatusRef.current === 'degraded' || lastRcloneStatusRef.current === 'disconnected')) {
+            setGlobalNotification({ message: 'Rclone recuperado y montado nuevamente.', type: 'success' });
+        }
+
+        lastRcloneStatusRef.current = rcloneStatus;
+    }, [rcloneStatus, rcloneReason]);
 
     // Polling de logs por trabajo — en un efecto separado para evitar stale closure
     useEffect(() => {
@@ -1128,11 +1148,30 @@ export default function App() {
 
                 <div className="p-4 border-t border-zinc-800/50 space-y-4">
                     <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30 text-xs font-medium w-full">
-                        {rcloneStatus === 'connected' ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-500" />}
-                        <span className={rcloneStatus === 'connected' ? 'text-green-500' : 'text-red-500'}>
-                            {rcloneStatus === 'connected' ? 'Rclone Montado' : 'Rclone Error'}
+                        {rcloneStatus === 'connected' ? (
+                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                        ) : rcloneStatus === 'degraded' ? (
+                            <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        ) : (
+                            <XCircle className="w-4 h-4 text-red-500" />
+                        )}
+                        <span className={
+                            rcloneStatus === 'connected'
+                                ? 'text-green-500'
+                                : rcloneStatus === 'degraded'
+                                    ? 'text-amber-500'
+                                    : 'text-red-500'
+                        }>
+                            {rcloneStatus === 'connected'
+                                ? 'Rclone Montado'
+                                : rcloneStatus === 'degraded'
+                                    ? 'Rclone Degradado'
+                                    : 'Rclone Error'}
                         </span>
                     </div>
+                    {rcloneStatus === 'degraded' && (
+                        <p className="text-[10px] text-amber-500 text-center -mt-2">{rcloneReason || 'Mount inestable, autoreparación en curso'}</p>
+                    )}
                     <button
                         onClick={() => setShowSettings(true)}
                         className="w-full flex items-center justify-center gap-2 px-4 py-2 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded-lg transition-colors text-sm font-medium"
