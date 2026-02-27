@@ -69,9 +69,35 @@ def on_startup():
     # Iniciar monitoreo de rclone
     start_rclone_monitor()
     
-    # Reanudar búsquedas pendientes
-    for job_id, job in active_jobs.items():
-        if job.get("status") not in ["Completed", "Error"]:
+    # Esperar a que rclone esté montado antes de reanudar búsquedas
+    print("[Startup] Esperando a que rclone esté montado...")
+    for attempt in range(30):  # 30 intentos x 1s = 30s max
+        try:
+            result = subprocess.run(
+                ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
+                capture_output=True,
+                timeout=2,
+                text=True
+            )
+            if result.returncode == 0 and os.path.exists("/mnt/torbox"):
+                item_count = len(os.listdir("/mnt/torbox"))
+                print(f"[Startup] ✓ Rclone montado y listo ({item_count} items)")
+                break
+        except:
+            pass
+        time.sleep(1)
+    else:
+        print("[Startup] ⚠️ Rclone no respondió después de 30s. Continuando sin reanudar búsquedas.")
+        return
+    
+    # Reanudar búsquedas pendientes (SOLO si rclone está montado)
+    pending_jobs = [job_id for job_id, job in active_jobs.items() 
+                    if job.get("status") not in ["Completed", "Error"]]
+    
+    if pending_jobs:
+        print(f"[Jobs] Reanudando {len(pending_jobs)} búsquedas pendientes...")
+        for job_id in pending_jobs:
+            job = active_jobs[job_id]
             print(f"[Jobs] Reanudando búsqueda para: {job.get('title')}")
             # Re-disparamos la lógica de descarga usando los datos guardados
             if "req" in job:
