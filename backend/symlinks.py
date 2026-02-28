@@ -2,8 +2,30 @@ import os
 import re
 
 def clean_title(title: str) -> str:
-    # Remove invalid characters for folder names
-    return re.sub(r'[\\/*?:"<>|]', "", title)
+    """Limpia el título para que sea compatible con Plex.
+    
+    Plex es muy permisivo pero en algunos casos tiene problemas con:
+    - Caracteres especiales: : " ? * < > |
+    - Paréntesis anidados
+    - Múltiples espacios
+    """
+    if not title:
+        return ""
+    
+    # 1. Eliminar caracteres inválidos en sistemas de archivos
+    clean = re.sub(r'[\\/*?:"<>|]', "", title)
+    
+    # 2. Reemplazar comillas inteligentes con comillas simples/nada
+    clean = clean.replace('"', '').replace('"', '')  # Smart quotes
+    clean = clean.replace(''', "'").replace(''', "'")   # Smart singles
+    
+    # 3. Limpiar espacios múltiples
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    
+    # 4. Evitar que termine con punto (confunde a algunos sistemas)
+    clean = clean.rstrip('.')
+    
+    return clean
 
 def create_plex_symlink(source_file_path: str, media_type: str, title: str, year: str, tmdb_id: int, base_library_path: str = "/Media", season_number: int = None):
     """"
@@ -13,10 +35,20 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
     """
     
     clean_name = clean_title(title)
-    if year:
+    
+    # Validaciones para Plex
+    if not clean_name or clean_name.isspace():
+        print(f"[Symlink] ⚠️ ADVERTENCIA: Título completamente vacío después de limpiar: '{title}'")
+        clean_name = title[:20] if title else "Unknown"
+    
+    # El año es importante para Plex - always include it
+    if year and year != "":
         folder_name = f"{clean_name} ({year}) {{tmdb-{tmdb_id}}}"
+        file_year = f" ({year})"
     else:
         folder_name = f"{clean_name} {{tmdb-{tmdb_id}}}"
+        file_year = ""
+        print(f"[Symlink] ⚠️ ADVERTENCIA: Año no disponible para '{title}' - Plex podría tener dificultades para identificarlo")
     
     # Usamos las carpetas declaradas localmente por el usuario
     sub_folder = "Movies" if media_type == "movie" else "Shows"
@@ -45,7 +77,8 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
         # Crear el nombre del archivo según el formato de Plex
         if media_type == "movie":
             # Para películas: Título (Año).ext
-            filename = f"{clean_name} ({year}){file_ext}"
+            filename = f"{clean_name}{file_year}{file_ext}"
+            print(f"[Symlink] Archivo películas: {filename}")
         else:
             # Para series: extraer episodio del archivo original
             from media_utils import extract_se_info
@@ -53,14 +86,25 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
             parsed_season, parsed_episode = extract_se_info(original_filename)
             
             if parsed_season and parsed_episode:
-                # Formato: S01E01.ext
+                # Formato estándar Plex: S01E01.ext
                 filename = f"S{parsed_season:02d}E{parsed_episode:02d}{file_ext}"
+                print(f"[Symlink] Episodio S{parsed_season:02d}E{parsed_episode:02d}")
             elif parsed_season:
-                # Solo temporada (pack completo): usar nombre original
-                filename = os.path.basename(source_file_path)
+                # Solo temporada (pack completo): mantener nombre pero limpiar caracteres problemáticos
+                filename = clean_title(original_filename)
+                if not filename.endswith(file_ext):
+                    filename = f"{filename}{file_ext}"
+                print(f"[Symlink] Pack temporada (archivo): {filename}")
             else:
-                # No se pudo parsear: usar nombre original como fallback
-                filename = os.path.basename(source_file_path)
+                # No se pudo parsear: intentar limpiar y mantener extensión
+                name_only = clean_title(os.path.splitext(original_filename)[0])
+                filename = f"{name_only}{file_ext}"
+                print(f"[Symlink] ⚠️ No se pudo parsear S/E: {filename}")
+                
+            # Validación final
+            if not filename or filename.isspace():
+                print(f"[Symlink] ✗ CRÍTICO: Archivo vacío, usando fallback")
+                filename = f"episode_{season_number}_{parsed_episode or 0}{file_ext}"
         
         symlink_path = os.path.join(target_dir, filename)
         
@@ -69,9 +113,14 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
             os.remove(symlink_path)
             
         os.symlink(source_file_path, symlink_path)
-        print(f"Symlink creado exitosamente en: {symlink_path}")
+        print(f"✓ Symlink creado exitosamente")
+        print(f"  Carpeta: {target_dir}")
+        print(f"  Archivo: {filename}")
+        print(f"  → {symlink_path}")
         return symlink_path
         
     except Exception as e:
-        print(f"Error creando estructura o symlink para Plex: {e}")
+        print(f"✗ Error creando estructura o symlink para Plex: {e}")
+        import traceback
+        traceback.print_exc()
         return None
