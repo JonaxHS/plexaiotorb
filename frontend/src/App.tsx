@@ -1732,6 +1732,27 @@ export default function App() {
                                             </button>
 
                                             <button
+                                                onClick={async () => {
+                                                    if (!confirm("⚠️ ¿ELIMINAR TODA LA BIBLIOTECA? Esta acción es IRREVERSIBLE") || 
+                                                        !confirm("🔥 ÚLTIMA CONFIRMACIÓN: Esto eliminará TODOS los symlinks de /Media/Movies y /Media/Shows")) {
+                                                        return;
+                                                    }
+                                                    try {
+                                                        const res = await fetch(`${API_BASE}/library/clear-all`, { method: 'DELETE' });
+                                                        const data = await res.json();
+                                                        addLog('[Library] 🗑️ ✓ ' + data.message);
+                                                        showNotification('Biblioteca completamente limpiada', 'success');
+                                                    } catch (e) {
+                                                        addLog('[Library] ✗ Error limpiando biblioteca: ' + e.message);
+                                                        showNotification('Error al limpiar biblioteca', 'error');
+                                                    }
+                                                }}
+                                                className="w-full py-2 bg-red-950/30 border border-red-500/50 text-red-400 hover:text-red-200 hover:bg-red-500/20 font-bold rounded-lg transition-all text-sm mt-2"
+                                            >
+                                                🗑️ Limpiar Biblioteca Completa
+                                            </button>
+
+                                            <button
                                                 onClick={() => {
                                                     setShowSettings(false);
                                                     setSetupMode(true);

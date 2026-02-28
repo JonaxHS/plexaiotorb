@@ -1240,6 +1240,27 @@ def delete_entire_movie(req: DeleteMovieRequest):
 
 # ============ SYSTEM RESET ENDPOINTS ============
 
+@app.delete("/api/library/clear-all")
+def clear_entire_library():
+    """⚠️ OPERACIÓN DESTRUCTIVA: Elimina TODA la biblioteca de Plex"""
+    base_library = config_module.config.get("plex", {}).get("library_path", "/Media")
+    
+    try:
+        import shutil
+        
+        # Eliminar Movies y Shows sin tocar la carpeta /Media misma
+        for subfolder in ["Movies", "Shows"]:
+            subfolder_path = os.path.join(base_library, subfolder)
+            if os.path.isdir(subfolder_path):
+                shutil.rmtree(subfolder_path)
+                os.makedirs(subfolder_path, exist_ok=True)  # Recrear carpeta vacía
+                print(f"[Library] {subfolder} eliminado completamente")
+        
+        print("[Library] ⚠️ TODA LA BIBLIOTECA HA SIDO ELIMINADA")
+        return {"status": "ok", "message": "Biblioteca completamente limpiada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error limpiando biblioteca: {str(e)}")
+
 @app.post("/api/system/reset-rclone")
 def reset_rclone():
     """Limpia el caché de rclone y fuerza remount."""
