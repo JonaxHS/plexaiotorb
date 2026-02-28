@@ -408,12 +408,14 @@ pass = {obscured}
 def get_settings():
     return {
         "tmdb_api_key": config_module.config.get("tmdb", {}).get("api_key", ""),
-        "aiostreams_url": config_module.config.get("aiostreams", {}).get("url", "")
+        "aiostreams_url": config_module.config.get("aiostreams", {}).get("url", ""),
+        "use_original_titles": config_module.config.get("plex", {}).get("use_original_titles", False)
     }
 
 class SettingsUpdate(BaseModel):
     tmdb_api_key: str
     aiostreams_url: str
+    use_original_titles: bool = False
 
 @app.post("/api/settings")
 def update_settings(req: SettingsUpdate):
@@ -425,6 +427,9 @@ def update_settings(req: SettingsUpdate):
     
     if "aiostreams" not in new_cfg: new_cfg["aiostreams"] = {}
     new_cfg["aiostreams"]["url"] = req.aiostreams_url.strip().rstrip('/')
+    
+    if "plex" not in new_cfg: new_cfg["plex"] = {}
+    new_cfg["plex"]["use_original_titles"] = req.use_original_titles
     
     save_config(new_cfg)
     
@@ -740,6 +745,7 @@ class SymlinkExistsRequest(BaseModel):
     year: str
     media_type: str
     tmdb_id: int
+    original_title: Optional[str] = None
     season_number: Optional[int] = None
     episode_number: Optional[int] = None
 
@@ -749,9 +755,13 @@ def check_symlink_exists(req: SymlinkExistsRequest):
     try:
         from symlinks import clean_title as clean_sym_title
         library_base = config_module.config.get("plex", {}).get("library_path", "/Media")
+        use_original = config_module.config.get("plex", {}).get("use_original_titles", False)
+        
+        # Determinar qué título usar
+        display_title = req.original_title if (use_original and req.original_title) else req.title
         
         # Consistent cleaning - must match symlinks.py logic
-        clean_name = clean_sym_title(req.title)
+        clean_name = clean_sym_title(display_title)
         
         # Match symlinks.py folder construction
         if req.year and req.year != "":
@@ -881,10 +891,12 @@ def initiate_download_process(req: DownloadRequest, job_id: str):
             source_file_path=path,
             media_type=req.media_type,
             title=req.title,
+            original_title=req.original_title,
             year=req.year,
             tmdb_id=req.tmdb_id,
             base_library_path=config_module.config.get("plex", {}).get("library_path", "/Media"),
-            season_number=season_number
+            season_number=season_number,
+            use_original=config_module.config.get("plex", {}).get("use_original_titles", False)
         )
         if res:
             msg = f"¡Listo! {req.title} ya está en Plex."

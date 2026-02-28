@@ -110,7 +110,7 @@ export default function App() {
     const [streamCacheStatuses, setStreamCacheStatuses] = useState<Record<string, boolean>>({}); // Cache status per stream URL
 
     // -- Live Settings State --
-    const [settingsForm, setSettingsForm] = useState({ tmdb_api_key: '', aiostreams_url: '' });
+    const [settingsForm, setSettingsForm] = useState({ tmdb_api_key: '', aiostreams_url: '', use_original_titles: false });
     const [settingsSaving, setSettingsSaving] = useState(false);
 
     // -- Discovery State --
@@ -356,7 +356,11 @@ export default function App() {
             fetch(`${API_BASE}/settings`)
                 .then(r => r.json())
                 .then(d => {
-                    setSettingsForm({ tmdb_api_key: d.tmdb_api_key || '', aiostreams_url: d.aiostreams_url || '' });
+                    setSettingsForm({ 
+                        tmdb_api_key: d.tmdb_api_key || '', 
+                        aiostreams_url: d.aiostreams_url || '',
+                        use_original_titles: d.use_original_titles || false
+                    });
                 }).catch(e => console.error(e));
         }
     }, [showSettings, setupMode]);
@@ -699,6 +703,7 @@ export default function App() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     title: item.title,
+                    original_title: item.original_title,
                     year: item.year,
                     media_type: item.media_type,
                     tmdb_id: item.id || item.tmdb_id,
@@ -1648,7 +1653,24 @@ export default function App() {
                                             />
                                             <p className="text-[10px] text-zinc-500 font-medium">Requerido para generar enlaces Magnets o Streaming</p>
                                         </div>
-                                    </div>
+                                        <div className="space-y-3 pt-4 border-t border-zinc-800/50">
+                                            <div className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-zinc-100">Usar Títulos Originales</p>
+                                                    <p className="text-xs text-zinc-500 mt-1">Guardar usando nombre original en inglés (ej: "Bad Boys Ride or Die") en lugar de traducción</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setSettingsForm({ ...settingsForm, use_original_titles: !settingsForm.use_original_titles })}
+                                                    className={`px-4 py-2 rounded-lg font-semibold text-xs transition-all ${
+                                                        settingsForm.use_original_titles 
+                                                            ? 'bg-green-500/20 border border-green-500/50 text-green-400' 
+                                                            : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                                                    }`}
+                                                >
+                                                    {settingsForm.use_original_titles ? '✓ Activado' : '○ Desactivado'}
+                                                </button>
+                                            </div>
+                                        </div>
 
                                     <div className="pt-4 space-y-3 border-t border-zinc-800/50">
                                         <button

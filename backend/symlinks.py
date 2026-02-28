@@ -27,14 +27,41 @@ def clean_title(title: str) -> str:
     
     return clean
 
-def create_plex_symlink(source_file_path: str, media_type: str, title: str, year: str, tmdb_id: int, base_library_path: str = "/Media", season_number: int = None):
+def create_plex_symlink(source_file_path: str, media_type: str, title: str, year: str, tmdb_id: int, base_library_path: str = "/Media", season_number: int = None, original_title: str = None, use_original: bool = None):
     """"
     Crea la estructura de carpetas de Plex y el symlink al archivo descargado.
     Expected structure for movies: /Media/Movies/Nombre (Año) {tmdb-ID}/Archivo.ext
     Expected structure for TV: /Media/Shows/Nombre (Año) {tmdb-ID}/Season X/Archivo.ext
+    
+    Args:
+        source_file_path: Ruta del archivo en TorBox
+        media_type: 'movie' o 'tv'
+        title: Título traducido (puede contener caracteres especiales)
+        year: Año de la película/serie
+        tmdb_id: ID de TMDB
+        base_library_path: Ruta base de la librería Plex
+        season_number: Número de temporada (para series)
+        original_title: Título original en inglés (ej: "Bad Boys Ride or Die")
+        use_original: Si True, usar original_title en lugar de title. Si None, intentar usar config.
     """
     
-    clean_name = clean_title(title)
+    # Determinar si usar título original o traducido
+    display_title = title
+    if use_original is None:
+        # Intentar leer de config
+        try:
+            from config import config
+            use_original = config.get("plex", {}).get("use_original_titles", False)
+        except:
+            use_original = False
+    
+    if use_original and original_title:
+        display_title = original_title
+        print(f"[Symlink] Usando título original: '{original_title}' (en lugar de '{title}')")
+    elif original_title and title != original_title:
+        print(f"[Symlink] Traducción disponible: '{title}' (original: '{original_title}')")
+    
+    clean_name = clean_title(display_title)
     
     # Validaciones para Plex
     if not clean_name or clean_name.isspace():

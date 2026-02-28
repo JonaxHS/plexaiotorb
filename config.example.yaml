@@ -10,3 +10,9 @@ aiostreams:
 plex:
   # Ruta raíz donde se crearán los symlinks (debe coincidir con la carpeta mapeada en docker-compose)
   library_path: "/Media"
+  
+  # NUEVO: Usar títulos originales en lugar de traducciones
+  # Si true: "Bad Boys Ride or Die (2024).mkv"
+  # Si false: "Bad Boys Hasta la muerte (2024).mkv" (traducido)
+  # Default: false
+  use_original_titles: false
