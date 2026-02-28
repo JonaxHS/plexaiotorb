@@ -750,10 +750,14 @@ def check_symlink_exists(req: SymlinkExistsRequest):
         from symlinks import clean_title as clean_sym_title
         library_base = config_module.config.get("plex", {}).get("library_path", "/Media")
         
-        # Consistent cleaning
+        # Consistent cleaning - must match symlinks.py logic
         clean_name = clean_sym_title(req.title)
+        
         # Match symlinks.py folder construction
-        folder_name = f"{clean_name} ({req.year}) {{tmdb-{req.tmdb_id}}}"
+        if req.year and req.year != "":
+            folder_name = f"{clean_name} ({req.year}) {{tmdb-{req.tmdb_id}}}"
+        else:
+            folder_name = f"{clean_name} {{tmdb-{req.tmdb_id}}}"
         
         sub_folder = "Movies" if req.media_type == "movie" else "Shows"
         plex_dir = os.path.join(library_base, sub_folder, folder_name)
