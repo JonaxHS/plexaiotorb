@@ -424,6 +424,7 @@ export default function App() {
                     tmdb_id: browsingJob.req ? browsingJob.req.tmdb_id : null,
                     media_type: browsingJob.media_type,
                     title: browsingJob.title,
+                    original_title: browsingJob.req ? browsingJob.req.original_title : browsingJob.original_title,
                     year: browsingJob.req ? browsingJob.req.year : (browsingJob.year || ""),
                     season_number: browsingJob.season,
                     job_id: browsingJob.job_id

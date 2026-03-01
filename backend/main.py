@@ -288,6 +288,7 @@ class ManualLinkRequest(BaseModel):
     tmdb_id: int
     media_type: str
     title: str
+    original_title: Optional[str] = None
     year: str
     season_number: Optional[int] = None
     job_id: Optional[str] = None
@@ -1456,14 +1457,33 @@ def manual_link(req: ManualLinkRequest):
     if not os.path.exists(full_source_path):
         raise HTTPException(status_code=404, detail="Archivo fuente no encontrado")
         
+    use_original = config_module.config.get("plex", {}).get("use_original_titles", False)
+
+    original_title = req.original_title
+    if use_original and not original_title and req.tmdb_id and req.media_type in ["movie", "tv"]:
+        try:
+            current_key = config_module.config.get("tmdb", {}).get("api_key", "")
+            if current_key:
+                tmdb_url = f"https://api.themoviedb.org/3/{req.media_type}/{req.tmdb_id}?api_key={current_key}&language=es-MX"
+                tmdb_r = requests.get(tmdb_url, timeout=10)
+                if tmdb_r.status_code == 200:
+                    tmdb_data = tmdb_r.json()
+                    original_title = tmdb_data.get("original_title") or tmdb_data.get("original_name")
+                    if original_title:
+                        print(f"[ManualLink] Original title recuperado desde TMDB: {original_title}")
+        except Exception as e:
+            print(f"[ManualLink] No se pudo recuperar original_title desde TMDB: {e}")
+
     res = create_plex_symlink(
         source_file_path=full_source_path,
         media_type=req.media_type,
         title=req.title,
+        original_title=original_title,
         year=req.year,
         tmdb_id=req.tmdb_id,
         base_library_path=config_module.config.get("plex", {}).get("library_path", "/Media"),
-        season_number=req.season_number
+        season_number=req.season_number,
+        use_original=use_original
     )
     
     if res:
