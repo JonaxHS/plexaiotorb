@@ -103,8 +103,8 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
         
         # Crear el nombre del archivo según el formato de Plex
         if media_type == "movie":
-            # Para películas: Título (Año).ext
-            filename = f"{clean_name}{file_year}{file_ext}"
+            # Para películas: Título (Año) {tmdb-ID}.ext
+            filename = f"{clean_name}{file_year} {{tmdb-{tmdb_id}}}{file_ext}"
             print(f"[Symlink] Archivo películas: {filename}")
         else:
             # Para series: extraer episodio del archivo original
