@@ -1672,6 +1672,8 @@ export default function App() {
                                             </div>
                                         </div>
 
+                                    </div>
+
                                     <div className="pt-4 space-y-3 border-t border-zinc-800/50">
                                         <button
                                             onClick={handleSaveSettings}
@@ -2431,6 +2433,7 @@ export default function App() {
                             )}
                         </div>
                     </div>
+                </div>
             )}
 
         </div>
