@@ -26,6 +26,13 @@ active_jobs = {}      # Seguimiento de procesos en curso
 
 import json
 
+def save_config(new_cfg: dict):
+    """Guarda config.yaml y recarga config_module.config en memoria."""
+    config_path = os.getenv("CONFIG_PATH", "config.yaml")
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(new_cfg, f, allow_unicode=True, sort_keys=False)
+    reload_config()
+
 def append_job_log(job_id: str, msg: str):
     """Agrega una línea de log a la cola del trabajo."""
     from datetime import datetime
@@ -433,6 +440,7 @@ def update_settings(req: SettingsUpdate):
     new_cfg["plex"]["use_original_titles"] = req.use_original_titles
     
     save_config(new_cfg)
+    print(f"[Settings] use_original_titles guardado en: {req.use_original_titles}")
     
     # Actualizar variables globales pre-cacheadas
     global TMDB_API_KEY
@@ -1473,6 +1481,8 @@ def manual_link(req: ManualLinkRequest):
                         print(f"[ManualLink] Original title recuperado desde TMDB: {original_title}")
         except Exception as e:
             print(f"[ManualLink] No se pudo recuperar original_title desde TMDB: {e}")
+
+    print(f"[ManualLink] use_original_titles={use_original} | title='{req.title}' | original_title='{original_title}'")
 
     res = create_plex_symlink(
         source_file_path=full_source_path,
