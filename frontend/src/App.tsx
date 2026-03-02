@@ -203,14 +203,20 @@ export default function App() {
             fetch(`${API_BASE}/downloads/active`)
                 .then(r => r.json())
                 .then(d => {
-                    // Agregar timestamps de inicio si no existen
-                    const updatedDownloads = { ...d };
-                    Object.entries(updatedDownloads).forEach(([id, job]: [string, any]) => {
-                        if (!job.client_started_at) {
-                            updatedDownloads[id] = { ...job, client_started_at: Date.now() };
-                        }
+                    // Preservar timestamps existentes y agregar nuevos solo para trabajos nuevos
+                    setActiveDownloads(prevDownloads => {
+                        const updatedDownloads = { ...d };
+                        Object.entries(updatedDownloads).forEach(([id, job]: [string, any]) => {
+                            // Si el trabajo ya existía, preservar su timestamp
+                            if (prevDownloads[id]?.client_started_at) {
+                                updatedDownloads[id] = { ...job, client_started_at: prevDownloads[id].client_started_at };
+                            } else if (!job.client_started_at) {
+                                // Si es nuevo y no tiene timestamp, agregarlo
+                                updatedDownloads[id] = { ...job, client_started_at: Date.now() };
+                            }
+                        });
+                        return updatedDownloads;
                     });
-                    setActiveDownloads(updatedDownloads);
                 }).catch(() => { });
         }, 5000);
         return () => clearInterval(interval);
