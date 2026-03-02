@@ -76,23 +76,26 @@ async def on_startup():
     
     # Iniciar VFS custom
     from vfs_manager import startup_vfs
-    await startup_vfs()
+    vfs_started = await startup_vfs()
     
-    # Esperar a que el VFS esté montado
-    print("[Startup] Esperando a que VFS esté montado...")
-    mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
-    for attempt in range(30):  # 30 intentos x 1s = 30s max
-        if os.path.exists(mount_point) and os.path.ismount(mount_point):
-            try:
-                item_count = len(os.listdir(mount_point))
-                print(f"[Startup] ✓ VFS montado y listo ({item_count} items)")
-                break
-            except:
-                pass
-        print(f"[Startup] Esperando VFS... ({attempt}s)")
-        await asyncio.sleep(1)
+    if vfs_started:
+        # Esperar a que el VFS esté montado
+        print("[Startup] Esperando a que VFS esté montado...")
+        mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
+        for attempt in range(30):  # 30 intentos x 1s = 30s max
+            if os.path.exists(mount_point) and os.path.ismount(mount_point):
+                try:
+                    item_count = len(os.listdir(mount_point))
+                    print(f"[Startup] ✓ VFS montado y listo ({item_count} items)")
+                    break
+                except:
+                    pass
+            print(f"[Startup] Esperando VFS... ({attempt}s)")
+            await asyncio.sleep(1)
+        else:
+            print("[Startup] ⚠️ VFS no se montó después de 30s. Continuando...")
     else:
-        print("[Startup] ⚠️ VFS no se montó después de 30s. Continuando...")
+        print("[Startup] VFS deshabilitado o no disponible. Continuando sin mount FUSE.")
     
     # Reanudar búsquedas pendientes
     pending_jobs = [job_id for job_id, job in active_jobs.items() 

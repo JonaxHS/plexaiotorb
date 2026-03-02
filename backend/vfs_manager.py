@@ -5,7 +5,6 @@ import asyncio
 import logging
 import os
 from typing import Optional
-from vfs import mount_torbox_vfs
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +46,16 @@ class VFSManager:
             logger.warning(f"  TORBOX_URL: {'✓' if torbox_url else '✗'}")
             logger.warning(f"  TORBOX_USER: {'✓' if torbox_user else '✗'}")
             logger.warning(f"  TORBOX_PASS: {'✓' if torbox_pass else '✗'}")
-            return
+            return False
         
         try:
+            try:
+                from vfs import mount_torbox_vfs
+            except ModuleNotFoundError as e:
+                logger.error(f"[VFSManager] VFS disabled: missing dependency ({e})")
+                logger.error("[VFSManager] Instala pyfuse3 y reconstruye el backend: docker compose up -d --build")
+                return False
+
             # Crear directorio si no existe
             os.makedirs(self.mount_point, exist_ok=True)
             
@@ -63,9 +69,11 @@ class VFSManager:
                 )
             )
             logger.info(f"[VFSManager] VFS mounting at {self.mount_point}")
+            return True
             
         except Exception as e:
             logger.error(f"[VFSManager] Failed to start VFS: {e}")
+            return False
     
     async def stop(self):
         """Para el VFS"""
@@ -85,7 +93,7 @@ vfs_manager = VFSManager()
 
 async def startup_vfs():
     """Llamar desde FastAPI startup"""
-    await vfs_manager.start()
+    return await vfs_manager.start()
 
 async def shutdown_vfs():
     """Llamar desde FastAPI shutdown"""
