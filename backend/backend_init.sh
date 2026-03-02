@@ -10,8 +10,21 @@ echo "[$(date)] ✓ Directorio /mnt/torbox creado"
 echo "[$(date)] ✓ Usando VFS custom (pyfuse3)"
 echo "[$(date)] VFS se montará automáticamente cuando se inicie el backend"
 
-# Instalar dependencias de fuse si no existen
-apt-get update && apt-get install -y libfuse3-dev
+# Validar pyfuse3 (autorreparación por si el contenedor viejo no lo trae)
+if python -c "import pyfuse3" >/dev/null 2>&1; then
+	echo "[$(date)] ✓ pyfuse3 disponible"
+else
+	echo "[$(date)] ⚠️ pyfuse3 no encontrado, instalando en runtime..."
+	pip install --no-cache-dir pyfuse3 || {
+		echo "[$(date)] ✗ No se pudo instalar pyfuse3"
+		exit 1
+	}
+	python -c "import pyfuse3" >/dev/null 2>&1 || {
+		echo "[$(date)] ✗ pyfuse3 sigue sin estar disponible después de instalar"
+		exit 1
+	}
+	echo "[$(date)] ✓ pyfuse3 instalado correctamente"
+fi
 
 echo "[$(date)] Iniciando FastAPI..."
 # Iniciar FastAPI (el VFS se monta desde main.py)
