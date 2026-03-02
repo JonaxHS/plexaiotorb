@@ -10,25 +10,25 @@ echo "[$(date)] ✓ Directorio /mnt/torbox creado"
 echo "[$(date)] ✓ Usando VFS custom (pyfuse3)"
 echo "[$(date)] VFS se montará automáticamente cuando se inicie el backend"
 
-# Validar pyfuse3 (autorreparación por si el contenedor viejo no lo trae)
-if python -c "import pyfuse3" >/dev/null 2>&1; then
-	echo "[$(date)] ✓ pyfuse3 disponible"
+# Validar dependencias VFS (autorreparación por si el contenedor viejo no las trae)
+if python -c "import pyfuse3, aiohttp, lxml" >/dev/null 2>&1; then
+	echo "[$(date)] ✓ Dependencias VFS disponibles (pyfuse3, aiohttp, lxml)"
 else
-	echo "[$(date)] ⚠️ pyfuse3 no encontrado, instalando en runtime..."
+	echo "[$(date)] ⚠️ Dependencias VFS faltantes, instalando en runtime..."
 	echo "[$(date)] Instalando dependencias de compilación para pyfuse3 (pkg-config, build-essential, libfuse3-dev)..."
 	apt-get update && apt-get install -y --no-install-recommends \
 		pkg-config \
 		build-essential \
 		libfuse3-dev
-	pip install --no-cache-dir pyfuse3 || {
-		echo "[$(date)] ✗ No se pudo instalar pyfuse3"
+	pip install --no-cache-dir -r /app/requirements.txt || {
+		echo "[$(date)] ✗ No se pudieron instalar las dependencias VFS"
 		exit 1
 	}
-	python -c "import pyfuse3" >/dev/null 2>&1 || {
-		echo "[$(date)] ✗ pyfuse3 sigue sin estar disponible después de instalar"
+	python -c "import pyfuse3, aiohttp, lxml" >/dev/null 2>&1 || {
+		echo "[$(date)] ✗ Dependencias VFS siguen sin estar disponibles después de instalar"
 		exit 1
 	}
-	echo "[$(date)] ✓ pyfuse3 instalado correctamente"
+	echo "[$(date)] ✓ Dependencias VFS instaladas correctamente"
 fi
 
 echo "[$(date)] Iniciando FastAPI..."

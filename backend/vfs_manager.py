@@ -53,7 +53,7 @@ class VFSManager:
                 from vfs import mount_torbox_vfs
             except ModuleNotFoundError as e:
                 logger.error(f"[VFSManager] VFS disabled: missing dependency ({e})")
-                logger.error("[VFSManager] Instala pyfuse3 y reconstruye el backend: docker compose up -d --build")
+                logger.error("[VFSManager] Instala dependencias VFS (pyfuse3/aiohttp/lxml) y reconstruye: docker compose up -d --build")
                 return False
 
             # Crear directorio si no existe
