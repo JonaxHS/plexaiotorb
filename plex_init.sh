@@ -25,9 +25,9 @@ if grep -q "\[torbox\]" /rclone_config/rclone.conf 2>/dev/null; then
         --vfs-read-chunk-size 128M \
         --vfs-read-chunk-size-limit off \
         --buffer-size 32M \
-        --dir-cache-time 10s \
-        --attr-timeout 10s \
-        --poll-interval 10s \
+        --dir-cache-time 5m \
+        --attr-timeout 1m \
+        --poll-interval 0 \
         --rc \
         --rc-addr :5572 \
         --rc-no-auth \

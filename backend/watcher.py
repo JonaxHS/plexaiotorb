@@ -124,9 +124,9 @@ def watch_for_file(
         if on_status:
             on_status("Searching", f"Buscando '{expected_filename}'... ({elapsed}s)")
 
-        # Limpiar ANTES de buscar para evitar cache stale
-        if cycle_count > 0:  # Primera vez ya se limpió arriba
-            cleanup_rclone_cache(on_log, aggressive=(cycle_count % 50 == 0))
+        # Limpiar caché solo cada 60 ciclos (1 minuto) para evitar rate limiting
+        if cycle_count > 0 and cycle_count % 60 == 0:
+            cleanup_rclone_cache(on_log, aggressive=(cycle_count % 300 == 0))
 
         found_path = find_file_path(expected_filename, title, mount_path, on_log, season, episode)
         if found_path:
@@ -134,8 +134,8 @@ def watch_for_file(
 
         cycle_count += 1
         
-        # Esperar menos entre ciclos (reducido de 3s a 1s) para búsqueda más rápida
-        time.sleep(1)
+        # Esperar 5 segundos entre ciclos para reducir carga
+        time.sleep(5)
 
     return None
 
