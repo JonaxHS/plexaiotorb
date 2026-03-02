@@ -78,6 +78,12 @@ class VFSManager:
     async def stop(self):
         """Para el VFS"""
         logger.info("[VFSManager] Stopping...")
+
+        try:
+            import pyfuse3
+            pyfuse3.terminate()
+        except Exception:
+            pass
         
         if self.mount_task:
             self.mount_task.cancel()

@@ -180,13 +180,17 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
     """Monta el VFS de TorBox"""
     logger.info(f"[VFS] Mounting TorBox at {mount_point}")
 
-    # Importar/activar bridge asyncio en runtime (con loop ya activo)
+    # Intentar bridge asyncio; fallback a loop Trio si no está disponible
+    use_asyncio_bridge = False
     try:
         import pyfuse3_asyncio
         pyfuse3_asyncio.enable()
+        use_asyncio_bridge = True
+        logger.info("[VFS] pyfuse3_asyncio habilitado")
+    except ModuleNotFoundError:
+        logger.warning("[VFS] pyfuse3_asyncio no disponible; usando backend Trio")
     except Exception as e:
-        logger.error(f"[VFS] No se pudo activar pyfuse3_asyncio: {e}")
-        raise RuntimeError("pyfuse3_asyncio no disponible o no inicializable")
+        logger.warning(f"[VFS] No se pudo activar pyfuse3_asyncio ({e}); usando backend Trio")
     
     vfs = TorBoxVFS(torbox_url, torbox_user, torbox_pass)
     
@@ -199,7 +203,11 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
 
         pyfuse3.init(vfs, mount_point, fuse_options)
         logger.info(f"[VFS] Mounted successfully at {mount_point}")
-        await pyfuse3.main()
+        if use_asyncio_bridge:
+            await pyfuse3.main()
+        else:
+            import trio
+            await asyncio.to_thread(trio.run, pyfuse3.main)
     except asyncio.CancelledError:
         logger.info("[VFS] Mount task cancelled")
         raise
