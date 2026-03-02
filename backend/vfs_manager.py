@@ -14,17 +14,39 @@ class VFSManager:
     
     def __init__(self):
         self.mount_task: Optional[asyncio.Task] = None
-        self.torbox_url = os.getenv("TORBOX_URL", "http://localhost:8080")
-        self.torbox_user = os.getenv("TORBOX_USER", "")
-        self.torbox_pass = os.getenv("TORBOX_PASS", "")
         self.mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
+    
+    def load_credentials(self):
+        """Carga credenciales de config.yaml o variables de entorno"""
+        try:
+            from config import config
+            
+            # Intentar desde config.yaml primero
+            torbox_url = config.get("vfs", {}).get("torbox_url") or os.getenv("TORBOX_URL")
+            torbox_user = config.get("vfs", {}).get("torbox_user") or os.getenv("TORBOX_USER")
+            torbox_pass = config.get("vfs", {}).get("torbox_pass") or os.getenv("TORBOX_PASS")
+            
+            return torbox_url, torbox_user, torbox_pass
+        except Exception as e:
+            logger.warning(f"[VFSManager] Error loading config: {e}")
+            # Fallback a env vars
+            return (
+                os.getenv("TORBOX_URL", ""),
+                os.getenv("TORBOX_USER", ""),
+                os.getenv("TORBOX_PASS", "")
+            )
     
     async def start(self):
         """Inicia el VFS"""
         logger.info("[VFSManager] Starting...")
         
-        if not all([self.torbox_url, self.torbox_user, self.torbox_pass]):
+        torbox_url, torbox_user, torbox_pass = self.load_credentials()
+        
+        if not all([torbox_url, torbox_user, torbox_pass]):
             logger.warning("[VFSManager] TorBox credentials not configured, VFS disabled")
+            logger.warning(f"  TORBOX_URL: {'✓' if torbox_url else '✗'}")
+            logger.warning(f"  TORBOX_USER: {'✓' if torbox_user else '✗'}")
+            logger.warning(f"  TORBOX_PASS: {'✓' if torbox_pass else '✗'}")
             return
         
         try:
@@ -34,9 +56,9 @@ class VFSManager:
             # Montar VFS
             self.mount_task = asyncio.create_task(
                 mount_torbox_vfs(
-                    self.torbox_url,
-                    self.torbox_user,
-                    self.torbox_pass,
+                    torbox_url,
+                    torbox_user,
+                    torbox_pass,
                     self.mount_point
                 )
             )
@@ -47,7 +69,7 @@ class VFSManager:
     
     async def stop(self):
         """Para el VFS"""
-        logging.info("[VFSManager] Stopping...")
+        logger.info("[VFSManager] Stopping...")
         
         if self.mount_task:
             self.mount_task.cancel()

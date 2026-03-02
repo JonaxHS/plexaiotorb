@@ -109,7 +109,14 @@ export default function App() {
     const [streamCacheStatuses, setStreamCacheStatuses] = useState<Record<string, boolean>>({}); // Cache status per stream URL
 
     // -- Live Settings State --
-    const [settingsForm, setSettingsForm] = useState({ tmdb_api_key: '', aiostreams_url: '', use_original_titles: false });
+    const [settingsForm, setSettingsForm] = useState({ 
+        tmdb_api_key: '', 
+        aiostreams_url: '', 
+        use_original_titles: false,
+        torbox_url: '',
+        torbox_user: '',
+        torbox_pass: ''
+    });
     const [settingsSaving, setSettingsSaving] = useState(false);
 
     // -- Discovery State --
@@ -1662,6 +1669,45 @@ export default function App() {
                                                     >
                                                         {settingsForm.use_original_titles ? '✓ Activado' : '○ Desactivado'}
                                                     </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-3 pt-4 border-t border-zinc-800/50">
+                                                <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">VFS Custom (TorBox WebDAV)</h4>
+                                                <p className="text-xs text-zinc-500">Configuración del sistema de archivos virtual para conectar TorBox</p>
+                                                
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">URL de TorBox</label>
+                                                    <input
+                                                        type="url"
+                                                        value={settingsForm.torbox_url}
+                                                        onChange={e => setSettingsForm({ ...settingsForm, torbox_url: e.target.value })}
+                                                        className="w-full bg-black/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50 transition-colors placeholder:text-zinc-700"
+                                                        placeholder="http://torbox.local:9000 o IP:puerto"
+                                                    />
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Usuario TorBox</label>
+                                                    <input
+                                                        type="text"
+                                                        value={settingsForm.torbox_user}
+                                                        onChange={e => setSettingsForm({ ...settingsForm, torbox_user: e.target.value })}
+                                                        className="w-full bg-black/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50 transition-colors placeholder:text-zinc-700"
+                                                        placeholder="usuario@email.com o username"
+                                                    />
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Contraseña TorBox</label>
+                                                    <input
+                                                        type="password"
+                                                        value={settingsForm.torbox_pass}
+                                                        onChange={e => setSettingsForm({ ...settingsForm, torbox_pass: e.target.value })}
+                                                        className="w-full bg-black/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50 transition-colors placeholder:text-zinc-700"
+                                                        placeholder="Contraseña segura"
+                                                    />
+                                                    <p className="text-[10px] text-zinc-500 font-medium">Se usa para conexión WebDAV al VFS custom</p>
                                                 </div>
                                             </div>
                                         </div>

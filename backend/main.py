@@ -416,13 +416,19 @@ def get_settings():
     return {
         "tmdb_api_key": config_module.config.get("tmdb", {}).get("api_key", ""),
         "aiostreams_url": config_module.config.get("aiostreams", {}).get("url", ""),
-        "use_original_titles": config_module.config.get("plex", {}).get("use_original_titles", False)
+        "use_original_titles": config_module.config.get("plex", {}).get("use_original_titles", False),
+        "torbox_url": config_module.config.get("vfs", {}).get("torbox_url", ""),
+        "torbox_user": config_module.config.get("vfs", {}).get("torbox_user", ""),
+        "torbox_pass": config_module.config.get("vfs", {}).get("torbox_pass", "")
     }
 
 class SettingsUpdate(BaseModel):
     tmdb_api_key: str
     aiostreams_url: str
     use_original_titles: bool = False
+    torbox_url: str = ""
+    torbox_user: str = ""
+    torbox_pass: str = ""
 
 @app.post("/api/settings")
 def update_settings(req: SettingsUpdate):
@@ -438,8 +444,24 @@ def update_settings(req: SettingsUpdate):
     if "plex" not in new_cfg: new_cfg["plex"] = {}
     new_cfg["plex"]["use_original_titles"] = req.use_original_titles
     
+    # Guardar configuración del VFS custom
+    if "vfs" not in new_cfg: new_cfg["vfs"] = {}
+    new_cfg["vfs"]["torbox_url"] = req.torbox_url
+    new_cfg["vfs"]["torbox_user"] = req.torbox_user
+    new_cfg["vfs"]["torbox_pass"] = req.torbox_pass
+    
     save_config(new_cfg)
     print(f"[Settings] use_original_titles guardado en: {req.use_original_titles}")
+    
+    # Actualizar variables de entorno para VFS
+    if req.torbox_url:
+        os.environ["TORBOX_URL"] = req.torbox_url
+    if req.torbox_user:
+        os.environ["TORBOX_USER"] = req.torbox_user
+    if req.torbox_pass:
+        os.environ["TORBOX_PASS"] = req.torbox_pass
+    
+    print(f"[VFS] Configuración TorBox actualizada")
     
     # Actualizar variables globales pre-cacheadas
     global TMDB_API_KEY
