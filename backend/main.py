@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -120,154 +120,6 @@ async def on_shutdown():
     await shutdown_vfs()
     print("[Shutdown] VFS stopped")
 
-def start_rclone_monitor():
-    """Monitorea rclone y se autorecupera si falla RC o el mount FUSE."""
-
-    def rc_alive(timeout: int = 3) -> bool:
-        try:
-            result = subprocess.run(
-                ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
-                capture_output=True,
-                timeout=timeout,
-                text=True
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    def mount_alive() -> Tuple[bool, str, int]:
-        """Verifica que /mnt/torbox esté montado y funcional."""
-        try:
-            if not os.path.exists("/mnt/torbox"):
-                return False, "mount_path_missing", 0
-            if not os.path.ismount("/mnt/torbox"):
-                return False, "not_a_mount", 0
-            # Intento rápido de listado - si falla, puede estar cargando
-            items = os.listdir("/mnt/torbox")
-            return True, "ok", len(items)
-        except OSError as e:
-            # I/O errors pueden ser temporales durante la carga inicial
-            if "Input/output error" in str(e):
-                return False, "mount_loading", 0
-            return False, f"mount_io_error: {e}", 0
-        except Exception as e:
-            return False, f"mount_error: {e}", 0
-
-    def restart_rclone(reason: str) -> bool:
-        print(f"[Rclone Monitor] ⚠️ Falla detectada ({reason}). Intentando autoreparación...")
-        try:
-            if not os.path.exists("/app/rclone_config/rclone.conf"):
-                print("[Rclone Monitor] ✗ No existe /app/rclone_config/rclone.conf")
-                return False
-            with open("/app/rclone_config/rclone.conf", "r") as f:
-                if "[torbox]" not in f.read():
-                    print("[Rclone Monitor] ✗ rclone.conf no tiene sección [torbox]")
-                    return False
-
-            subprocess.run(["pkill", "-f", "rclone mount torbox:"], timeout=5, capture_output=True)
-            time.sleep(1)
-            subprocess.run(["umount", "-f", "/mnt/torbox"], timeout=5, capture_output=True)
-            os.makedirs("/mnt/torbox", exist_ok=True)
-            time.sleep(1)
-
-            subprocess.Popen([
-                "rclone", "mount", "torbox:", "/mnt/torbox",
-                "--config", "/app/rclone_config/rclone.conf",
-                "--vfs-cache-mode", "writes",
-                "--vfs-cache-max-age", "15m",
-                "--vfs-cache-max-size", "50G",
-                "--vfs-read-chunk-size", "256M",
-                "--vfs-read-chunk-size-limit", "off",
-                "--buffer-size", "64M",
-                "--dir-cache-time", "10m",
-                "--attr-timeout", "10m",
-                "--vfs-read-wait", "5ms",
-                "--vfs-write-wait", "5ms",
-                "--vfs-fast-fingerprint",
-                "--poll-interval", "30s",
-                "--allow-non-empty",
-                "--allow-other",
-                "--rc",
-                "--rc-addr", "127.0.0.1:5572",
-                "--log-level", "INFO",
-                "--log-file", "/tmp/rclone_monitor.log"
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-            print("[Rclone Monitor] Rclone relanzado, validando salud...")
-            for attempt in range(30):
-                time.sleep(1)
-                if not rc_alive(2):
-                    continue
-                ok_mount, mount_reason, item_count = mount_alive()
-                if ok_mount:
-                    print(f"[Rclone Monitor] ✓ Autoreparado: RC OK + mount OK ({item_count} items)")
-                    return True
-                if attempt % 5 == 0:
-                    print(f"[Rclone Monitor] Esperando mount... {mount_reason} ({attempt+1}/30)")
-
-            print("[Rclone Monitor] ✗ Timeout autoreparando rclone. Ver /tmp/rclone_monitor.log")
-            return False
-        except Exception as e:
-            print(f"[Rclone Monitor] ✗ Excepción en autoreparación: {e}")
-            return False
-
-    def monitor_rclone():
-        # Delay inicial para permitir que el mount se estabilice
-        print("[Rclone Monitor] Esperando 90s para que el mount inicial se estabilice...")
-        time.sleep(90)
-        print("[Rclone Monitor] ✓ Iniciando monitoreo activo")
-        
-        last_restart_at = 0.0
-        consecutive_failures = 0
-        loading_grace_count = 0  # Contador de estados "loading"
-
-        while True:
-            try:
-                time.sleep(15)
-                rc_ok = rc_alive(3)
-                mount_ok, mount_reason, item_count = mount_alive()
-
-                if rc_ok and mount_ok:
-                    consecutive_failures = 0
-                    loading_grace_count = 0
-                    continue
-
-                # Si el mount está "cargando", darle más tiempo antes de considerar falla
-                if mount_reason == "mount_loading":
-                    loading_grace_count += 1
-                    if loading_grace_count < 4:  # Tolerar hasta 4 checks (60s) de estado "loading"
-                        print(f"[Rclone Monitor] Mount cargando... ({loading_grace_count}/4 checks)")
-                        continue
-                    else:
-                        print(f"[Rclone Monitor] ⚠️ Mount en estado 'loading' por más de 60s, considerando falla")
-
-                consecutive_failures += 1
-                loading_grace_count = 0
-                reason = "rc_down" if not rc_ok else mount_reason
-
-                cooldown = 30  # Aumentado de 20s a 30s
-                since_restart = time.time() - last_restart_at
-                if since_restart < cooldown:
-                    wait_left = int(cooldown - since_restart)
-                    print(f"[Rclone Monitor] ⚠️ Fallo detectado ({reason}), en cooldown {wait_left}s")
-                    continue
-
-                repaired = restart_rclone(reason)
-                last_restart_at = time.time()
-
-                if not repaired and consecutive_failures >= 3:
-                    print("[Rclone Monitor] ⚠️ Varias fallas seguidas, esperando 90s antes del próximo intento")
-                    time.sleep(90)
-
-            except Exception as e:
-                print(f"[Rclone Monitor] ✗ Error en monitor: {e}")
-                time.sleep(5)
-    
-    # Iniciar monitor en thread daemon
-    monitor_thread = threading.Thread(target=monitor_rclone, daemon=True)
-    monitor_thread.start()
-    print("[Rclone Monitor] Thread iniciado (esperará 90s antes del primer check)")
-
 TMDB_API_KEY = config.get("tmdb", {}).get("api_key", "")
 AIOSTREAMS_URL = config.get("aiostreams", {}).get("url", "")
 
@@ -310,24 +162,6 @@ def get_status():
     """"Devuelve si el sistema ya fue configurado por primera vez"""
     return {"configured": is_setup_complete()}
 
-def obscure_password(password: str) -> str:
-    """"Usa Rclone instalado localmente en el backend para ofuscar (el backend container de Python puede que no tenga rclone, usemos subprocess si instalamos rclone-core, o un script puro python)
-    Since we are inside Alpine/Debian, we'll implement a basic rclone obscure python logic or run rclone from docker.
-    Since backend doesn't have rclone, we'll ask the 'rclone' container to do it via Docker API."""
-    try:
-        client = docker.from_env()
-        # Ensure rclone container exists. Since it restarts unless stopped, it is running but maybe failing mount.
-        # Let's run a temporary rclone container directly to avoid finding the specific one:
-        logs = client.containers.run(
-            "rclone/rclone:latest",
-            f"obscure '{password}'",
-            remove=True
-        )
-        return logs.decode("utf-8").strip()
-    except Exception as e:
-        print(f"Error obfuscating DB password via Docker API: {e}")
-        return ""
-
 @app.post("/api/setup")
 def run_setup(req: SetupRequest):
     """"Guarda la configuración y reinicia los contenedores afectados"""
@@ -336,7 +170,12 @@ def run_setup(req: SetupRequest):
     new_config = {
         "tmdb": {"api_key": req.tmdb_api_key},
         "aiostreams": {"url": req.aiostreams_url},
-        "plex": {"library_path": "/Media"}
+        "plex": {"library_path": "/Media"},
+        "vfs": {
+            "torbox_url": "https://webdav.torbox.app/",
+            "torbox_user": req.torbox_email,
+            "torbox_pass": req.torbox_password
+        }
     }
     config_path = os.getenv("CONFIG_PATH", "config.yaml")
     with open(config_path, "w", encoding="utf-8") as f:
@@ -344,30 +183,7 @@ def run_setup(req: SetupRequest):
         
     reload_config()
     
-    # Update global config references specifically for TMDB and AIO URL in main
-    # Alternatively we read them inside the endpoints. Let's make sure endpoints read `config_module.config` directly.
-
-    # 3. Crear rclone.conf
-    obscured = obscure_password(req.torbox_password)
-    os.makedirs("/config/rclone", exist_ok=True)
-    rclone_conf = f"""[torbox]
-type = webdav
-url = https://webdav.torbox.app/
-vendor = other
-user = {req.torbox_email}
-pass = {obscured}
-"""
-    # Assuming volume mounted rclone config locally into /config/rclone in backend? 
-    # Wait, we need to make sure the backend can write to rclone config. 
-    # Let's write to "/app/rclone_config/rclone.conf" assuming we map it back or it's in a shared volume.
-    # We mapped ./rclone_config in host to backend? No, we didn't. 
-    # Let's map ./rclone_config to backend in docker-compose.
-    rclone_path = "/app/rclone_config/rclone.conf"
-    os.makedirs("/app/rclone_config", exist_ok=True)
-    with open(rclone_path, "w", encoding="utf-8") as f:
-        f.write(rclone_conf)
-
-    # 4. Modificar Preferences.xml de Plex
+    # 2. Modificar Preferences.xml de Plex
     pref_path = "/plex_config/Library/Application Support/Plex Media Server/Preferences.xml"
     os.makedirs(os.path.dirname(pref_path), exist_ok=True)
     if os.path.exists(pref_path):
@@ -384,30 +200,16 @@ pass = {obscured}
         with open(pref_path, "w", encoding="utf-8") as f:
             f.write(f'<?xml version="1.0" encoding="utf-8"?>\n<Preferences FriendlyName="{req.plex_server_name}" />')
 
-    # 5. Reiniciar contenedores de rclone y plex
+    # 3. Reiniciar contenedor de plex
     try:
         client = docker.from_env()
         try:
             plex_c = client.containers.get("plex")
             plex_c.restart()
         except: pass
-        
-        # Ejecutar rclone mount localmente en el backend
-        subprocess.run(["umount", "-f", "/mnt/torbox"], stderr=subprocess.DEVNULL)
-        os.makedirs("/mnt/torbox", exist_ok=True)
-        subprocess.run([
-            "rclone", "mount", "torbox:", "/mnt/torbox", 
-            "--config", "/app/rclone_config/rclone.conf", 
-            "--vfs-cache-mode", "writes", 
-            "--dir-cache-time", "10m",
-            "--attr-timeout", "10m",
-            "--poll-interval", "30s",
-            "--allow-non-empty", 
-            "--allow-other",
-            "--rc",
-            "--rc-addr", "127.0.0.1:5572",
-            "--daemon"
-        ])
+        os.environ["TORBOX_URL"] = "https://webdav.torbox.app/"
+        os.environ["TORBOX_USER"] = req.torbox_email
+        os.environ["TORBOX_PASS"] = req.torbox_password
     except Exception as e:
         print(f"Error reiniciando contenedores: {e}")
 
@@ -472,29 +274,18 @@ def update_settings(req: SettingsUpdate):
     
     return {"status": "ok", "message": "Ajustes almacenados en vivo"}
 
-@app.get("/api/rclone/status")
-def rclone_status():
+@app.get("/api/vfs/status")
+def vfs_status():
     try:
-        rc = subprocess.run(
-            ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
-            capture_output=True,
-            timeout=2,
-            text=True
-        )
-        rc_ok = rc.returncode == 0
-
         if not os.path.exists("/mnt/torbox"):
-            return {"status": "disconnected", "reason": "mount_path_missing", "rc": rc_ok}
+            return {"status": "disconnected", "reason": "mount_path_missing"}
         if not os.path.ismount("/mnt/torbox"):
-            return {"status": "disconnected", "reason": "not_a_mount", "rc": rc_ok}
+            return {"status": "degraded", "reason": "not_a_mount"}
 
         item_count = len(os.listdir("/mnt/torbox"))
-        if not rc_ok:
-            return {"status": "degraded", "reason": "rc_down_mount_alive", "items": item_count, "rc": False}
-
-        return {"status": "connected", "items": item_count, "rc": True}
+        return {"status": "connected", "items": item_count}
     except Exception as e:
-        return {"status": "disconnected", "reason": str(e), "rc": False}
+        return {"status": "disconnected", "reason": str(e)}
 
 @app.get("/api/logs")
 def get_global_logs():
@@ -1294,66 +1085,31 @@ def clear_entire_library():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error limpiando biblioteca: {str(e)}")
 
-@app.post("/api/system/reset-rclone")
-def reset_rclone():
-    """Limpia el caché de rclone y fuerza remount."""
+@app.post("/api/system/reset-vfs")
+async def reset_vfs():
+    """Reinicia el mount del VFS custom sin reiniciar el backend."""
     try:
-        import subprocess
-        import time
-        
-        print("[System] Iniciando reset de rclone...")
-        
-        # 1. Limpiar caché vía rc
-        try:
-            result = subprocess.run(
-                ["rclone", "rc", "vfs/forget"],
-                capture_output=True,
-                timeout=5,
-                text=True
-            )
-            if result.returncode == 0:
-                print("[System] ✓ Cache de rclone limpiado (vfs/forget)")
-            else:
-                print(f"[System] ⚠️ vfs/forget retornó error: {result.stderr[:100]}")
-        except Exception as e:
-            print(f"[System] ⚠️ Error en vfs/forget: {e}")
-        
-        # 2. Intentar desmontar
-        try:
-            subprocess.run(["umount", "-f", "/mnt/torbox"], capture_output=True, timeout=5)
-            print("[System] ✓ Mount desmontado")
-            time.sleep(2)
-        except Exception as e:
-            print(f"[System] ⚠️ Error desmontando: {e}")
-        
-        # 3. Remount automático (si está configurado)
-        try:
-            if os.path.exists("/app/rclone_config/rclone.conf"):
-                with open("/app/rclone_config/rclone.conf", 'r') as f:
-                    if "[torbox]" in f.read():
-                        subprocess.Popen([
-                            "rclone", "mount", "torbox:", "/mnt/torbox",
-                            "--config", "/app/rclone_config/rclone.conf",
-                            "--vfs-cache-mode", "full",
-                            "--vfs-cache-max-age", "24h",
-                            "--vfs-cache-max-size", "10G",
-                            "--allow-non-empty",
-                            "--allow-other",
-                            "--rc",
-                            "--rc-addr", "127.0.0.1:5572"
-                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        print("[System] ✓ Rclone remontado automáticamente")
-                        time.sleep(2)
-        except Exception as e:
-            print(f"[System] ⚠️ Error remontando: {e}")
-        
+        from vfs_manager import shutdown_vfs, startup_vfs
+
+        print("[System] Iniciando reset de VFS...")
+        await shutdown_vfs()
+        await asyncio.sleep(1)
+        started = await startup_vfs()
+
+        if started:
+            print("[System] ✓ VFS reiniciado")
+            return {
+                "status": "ok",
+                "message": "VFS reiniciado correctamente"
+            }
+
         return {
-            "status": "ok",
-            "message": "Reset de rclone completado. Caché limpiado y remontado."
+            "status": "warning",
+            "message": "VFS no pudo iniciarse (revisa credenciales/dependencias)"
         }
     except Exception as e:
-        print(f"[System] ✗ Error en reset de rclone: {e}")
-        raise HTTPException(status_code=500, detail=f"Error reseteando rclone: {str(e)}")
+        print(f"[System] ✗ Error en reset de VFS: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reseteando VFS: {str(e)}")
 
 @app.post("/api/system/reset-plex")
 def reset_plex():
@@ -1377,42 +1133,28 @@ def reset_plex():
         raise HTTPException(status_code=500, detail=f"Error reiniciando Plex: {str(e)}")
 
 @app.post("/api/system/reset-all")
-def reset_all():
-    """Reinicia tanto rclone como Plex."""
+async def reset_all():
+    """Reinicia VFS y Plex."""
     try:
-        import subprocess
-        import time
-        
         print("[System] Iniciando reset completo del sistema...")
         results = []
         
-        # 1. Reset Rclone
+        # 1. Reset VFS
         try:
-            subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5)
-            subprocess.run(["umount", "-f", "/mnt/torbox"], capture_output=True, timeout=5)
-            time.sleep(1)
-            
-            if os.path.exists("/app/rclone_config/rclone.conf"):
-                with open("/app/rclone_config/rclone.conf", 'r') as f:
-                    if "[torbox]" in f.read():
-                        subprocess.Popen([
-                            "rclone", "mount", "torbox:", "/mnt/torbox",
-                            "--config", "/app/rclone_config/rclone.conf",
-                            "--vfs-cache-mode", "full",
-                            "--vfs-cache-max-age", "24h",
-                            "--vfs-cache-max-size", "10G",
-                            "--allow-non-empty",
-                            "--allow-other",
-                            "--rc",
-                            "--rc-addr", "127.0.0.1:5572"
-                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        time.sleep(2)
-            
-            results.append("✓ Rclone reseteado")
-            print("[System] ✓ Rclone reseteado")
+            from vfs_manager import shutdown_vfs, startup_vfs
+            await shutdown_vfs()
+            await asyncio.sleep(1)
+            started = await startup_vfs()
+
+            if started:
+                results.append("✓ VFS reiniciado")
+                print("[System] ✓ VFS reiniciado")
+            else:
+                results.append("⚠️ VFS no inició (revisar configuración)")
+                print("[System] ⚠️ VFS no inició")
         except Exception as e:
-            results.append(f"⚠️ Error rclone: {str(e)}")
-            print(f"[System] ⚠️ Error reseteando rclone: {e}")
+            results.append(f"⚠️ Error VFS: {str(e)}")
+            print(f"[System] ⚠️ Error reseteando VFS: {e}")
         
         # 2. Reset Plex
         try:

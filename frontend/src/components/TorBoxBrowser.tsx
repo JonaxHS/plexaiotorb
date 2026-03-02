@@ -144,7 +144,7 @@ export default function TorBoxBrowser({ onSelect, onClose, apiBase }: TorBoxBrow
                 </div>
 
                 <div className="p-4 bg-zinc-950/50 border-t border-zinc-800 text-[10px] text-zinc-600 flex justify-between">
-                    <span>TorBox Rclone Mount (/mnt/torbox)</span>
+                    <span>TorBox VFS Mount (/mnt/torbox)</span>
                     <span>Selecciona un archivo de video para vincularlo manualmente</span>
                 </div>
             </div>

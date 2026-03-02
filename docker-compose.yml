@@ -19,7 +19,6 @@ services:
       - ./app_config:/app/config:rw
       - ./plex_media:/Media:rw # Where we'll create the symlinks
       - ./plex_config:/plex_config:rw # To edit Preferences.xml
-      - ./rclone_config:/app/rclone_config:rw
       - /var/run/docker.sock:/var/run/docker.sock
     cap_add:
       - SYS_ADMIN
@@ -42,8 +41,7 @@ services:
     volumes:
       - ./plex_config:/config
       - ./plex_media:/Media
-      - ./rclone_config:/rclone_config:ro
-      - ./plex_init.sh:/custom-cont-init.d/rclone_init.sh:ro
+      - ./plex_init.sh:/custom-cont-init.d/vfs_init.sh:ro
       - torbox_data:/mnt/torbox:rw
       - /dev/shm:/transcode
     cap_add:

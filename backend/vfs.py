@@ -1,6 +1,6 @@
 """
 VFS Custom basado en pyfuse3.
-Reemplaza rclone mount con control total y sin rate limiting.
+Filesystem virtual con control total y sin rate limiting.
 """
 import pyfuse3
 import logging

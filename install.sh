@@ -15,7 +15,6 @@ fi
 
 echo "Creating necessary configuration folders..."
 mkdir -p app_config
-mkdir -p rclone_config
 mkdir -p plex_config
 mkdir -p plex_media/movies
 mkdir -p plex_media/tv

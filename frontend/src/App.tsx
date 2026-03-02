@@ -93,19 +93,19 @@ export default function App() {
 
     const [logs, setLogs] = useState<string[]>(["[System] Conectado a PlexAioTorb GUI."]);
     const [globalLogs, setGlobalLogs] = useState<string[]>([]);
-    const [rcloneStatus, setRcloneStatus] = useState<string>("checking");
-    const [rcloneReason, setRcloneReason] = useState<string>("");
+    const [vfsStatus, setVfsStatus] = useState<string>("checking");
+    const [vfsReason, setVfsReason] = useState<string>("");
     const [notifications, setNotifications] = useState<string[]>([]);
     const [activeDownloads, setActiveDownloads] = useState<Record<string, any>>({});
     const [showTorBoxBrowser, setShowTorBoxBrowser] = useState(false);
     const [browsingJob, setBrowsingJob] = useState<any>(null);
-    const [activeLogTab, setActiveLogTab] = useState<'backend' | 'rclone' | 'local'>('backend');
+    const [activeLogTab, setActiveLogTab] = useState<'backend' | 'vfs' | 'local'>('backend');
     const logsEndRef = useRef<HTMLDivElement>(null);
     const [jobLogs, setJobLogs] = useState<Record<string, string[]>>({});    // Per-job logs
     const [expandedJobLog, setExpandedJobLog] = useState<string | null>(null); // Currently expanded job
     const jobLogSinceRef = useRef<Record<string, number>>({});               // Cursor per job
     const jobLogsEndRef = useRef<HTMLDivElement>(null);
-    const lastRcloneStatusRef = useRef<string>("checking");
+    const lastVfsStatusRef = useRef<string>("checking");
     const [streamCacheStatuses, setStreamCacheStatuses] = useState<Record<string, boolean>>({}); // Cache status per stream URL
 
     // -- Live Settings State --
@@ -184,14 +184,14 @@ export default function App() {
                     if (d.logs) setGlobalLogs(d.logs);
                 }).catch(() => { });
 
-            fetch(`${API_BASE}/rclone/status`)
+            fetch(`${API_BASE}/vfs/status`)
                 .then(r => r.json())
                 .then(d => {
-                    setRcloneStatus(d.status || "disconnected");
-                    setRcloneReason(d.reason || "");
+                    setVfsStatus(d.status || "disconnected");
+                    setVfsReason(d.reason || "");
                 }).catch(() => {
-                    setRcloneStatus("disconnected");
-                    setRcloneReason("backend_unreachable");
+                    setVfsStatus("disconnected");
+                    setVfsReason("backend_unreachable");
                 });
 
             // Polling de notificaciones
@@ -230,18 +230,18 @@ export default function App() {
     }, [setupMode, checkingStatus]);
 
     useEffect(() => {
-        if (rcloneStatus === lastRcloneStatusRef.current) return;
+        if (vfsStatus === lastVfsStatusRef.current) return;
 
-        if (rcloneStatus === 'degraded') {
-            setGlobalNotification({ message: `Rclone degradado (${rcloneReason || 'sin detalle'}). Se intentará autoreparación automática.`, type: 'error' });
-        } else if (rcloneStatus === 'disconnected') {
-            setGlobalNotification({ message: 'Rclone desconectado. Iniciando autoreparación automática.', type: 'error' });
-        } else if (rcloneStatus === 'connected' && (lastRcloneStatusRef.current === 'degraded' || lastRcloneStatusRef.current === 'disconnected')) {
-            setGlobalNotification({ message: 'Rclone recuperado y montado nuevamente.', type: 'success' });
+        if (vfsStatus === 'degraded') {
+            setGlobalNotification({ message: `VFS degradado (${vfsReason || 'sin detalle'}). Se intentará autoreparación automática.`, type: 'error' });
+        } else if (vfsStatus === 'disconnected') {
+            setGlobalNotification({ message: 'VFS desconectado. Iniciando autoreparación automática.', type: 'error' });
+        } else if (vfsStatus === 'connected' && (lastVfsStatusRef.current === 'degraded' || lastVfsStatusRef.current === 'disconnected')) {
+            setGlobalNotification({ message: 'VFS recuperado y montado nuevamente.', type: 'success' });
         }
 
-        lastRcloneStatusRef.current = rcloneStatus;
-    }, [rcloneStatus, rcloneReason]);
+        lastVfsStatusRef.current = vfsStatus;
+    }, [vfsStatus, vfsReason]);
 
     // Timer que actualiza cada segundo para mostrar el tiempo transcurrido
     useEffect(() => {
@@ -952,7 +952,7 @@ export default function App() {
                     episode_number: selectedItem.current_episode
                 })
             });
-            addLog(`Instrucción enviada. Esperando a que Rclone monte el archivo...`);
+            addLog(`Instrucción enviada. Esperando a que VFS monte el archivo...`);
             showNotification(`¡Añadido! Buscando "${selectedItem.title}" en la nube...`, 'success');
 
             // setItem status locally to show feedback immediately
@@ -1138,7 +1138,7 @@ export default function App() {
                         {setupStep === 2 && (
                             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
                                 <h2 className="text-lg font-medium text-amber-400">2. Túnel WebDAV (TorBox)</h2>
-                                <p className="text-xs text-zinc-500">Tus datos se ofuscarán automáticamente usando Rclone. Nosotros no los vemos.</p>
+                                <p className="text-xs text-zinc-500">Tus datos se usarán para conexión WebDAV del VFS custom.</p>
                                 <div>
                                     <label className="block text-sm text-zinc-400 mb-1">TorBox Email</label>
                                     <input type="email" value={setupData.torbox_email} onChange={e => setSetupData({ ...setupData, torbox_email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 focus:ring-2 focus:ring-amber-500/50 outline-none" />
@@ -1241,29 +1241,29 @@ export default function App() {
 
                 <div className="p-4 border-t border-zinc-800/50 space-y-4">
                     <div className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30 text-xs font-medium w-full">
-                        {rcloneStatus === 'connected' ? (
+                        {vfsStatus === 'connected' ? (
                             <CheckCircle2 className="w-4 h-4 text-green-500" />
-                        ) : rcloneStatus === 'degraded' ? (
+                        ) : vfsStatus === 'degraded' ? (
                             <AlertTriangle className="w-4 h-4 text-amber-500" />
                         ) : (
                             <XCircle className="w-4 h-4 text-red-500" />
                         )}
                         <span className={
-                            rcloneStatus === 'connected'
+                            vfsStatus === 'connected'
                                 ? 'text-green-500'
-                                : rcloneStatus === 'degraded'
+                                : vfsStatus === 'degraded'
                                     ? 'text-amber-500'
                                     : 'text-red-500'
                         }>
-                            {rcloneStatus === 'connected'
-                                ? 'Rclone Montado'
-                                : rcloneStatus === 'degraded'
-                                    ? 'Rclone Degradado'
-                                    : 'Rclone Error'}
+                            {vfsStatus === 'connected'
+                                ? 'VFS Montado'
+                                : vfsStatus === 'degraded'
+                                    ? 'VFS Degradado'
+                                    : 'VFS Error'}
                         </span>
                     </div>
-                    {rcloneStatus === 'degraded' && (
-                        <p className="text-[10px] text-amber-500 text-center -mt-2">{rcloneReason || 'Mount inestable, autoreparación en curso'}</p>
+                    {vfsStatus === 'degraded' && (
+                        <p className="text-[10px] text-amber-500 text-center -mt-2">{vfsReason || 'Mount inestable, autoreparación en curso'}</p>
                     )}
                     <button
                         onClick={() => setActiveTab('settings')}
@@ -1731,16 +1731,16 @@ export default function App() {
                                                 <button
                                                     onClick={async () => {
                                                         try {
-                                                            const res = await fetch(`${API_BASE}/system/reset-rclone`, { method: 'POST' });
+                                                            const res = await fetch(`${API_BASE}/system/reset-vfs`, { method: 'POST' });
                                                             const data = await res.json();
-                                                            addLog('[System] ✓ Rclone reseteado: ' + data.message);
+                                                            addLog('[System] ✓ VFS reiniciado: ' + data.message);
                                                         } catch (e) {
-                                                            addLog('[System] ✗ Error reseteando rclone: ' + e.message);
+                                                            addLog('[System] ✗ Error reiniciando VFS: ' + e.message);
                                                         }
                                                     }}
                                                     className="w-full py-2 bg-zinc-900 border border-blue-500/20 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 font-bold rounded-lg transition-all text-sm mt-2"
                                                 >
-                                                    🔄 Resetear Rclone
+                                                    🔄 Reiniciar VFS
                                                 </button>
                                                 
                                                 <button
@@ -1821,9 +1821,9 @@ export default function App() {
                                                     className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'backend' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
                                                 >Backend / API</button>
                                                 <button
-                                                    onClick={() => setActiveLogTab('rclone')}
-                                                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'rclone' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                                >Rclone / Plex</button>
+                                                    onClick={() => setActiveLogTab('vfs')}
+                                                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'vfs' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                                >VFS / Plex</button>
                                                 <button
                                                     onClick={() => setActiveLogTab('local')}
                                                     className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'local' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
@@ -1850,13 +1850,13 @@ export default function App() {
                                                     )) : <div className="text-zinc-600 italic">Esperando eventos del backend...</div>
 
                                             ) : (
-                                                /* Mostrar Rclone/Plex Logs */
+                                                /* Mostrar VFS/Plex Logs */
                                                 globalLogs.filter(l => !l.includes('plexaiotorb-backend')).length > 0 ?
                                                     globalLogs.filter(l => !l.includes('plexaiotorb-backend')).map((log, i) => (
                                                         <div key={`rc-${i}`} className="leading-relaxed whitespace-pre-wrap break-words text-amber-200 border-l-2 border-amber-500 pl-2 py-0.5">
                                                             {log}
                                                         </div>
-                                                    )) : <div className="text-zinc-600 italic">Esperando eventos de rclone/plex...</div>
+                                                    )) : <div className="text-zinc-600 italic">Esperando eventos de VFS/Plex...</div>
                                             )}
 
                                             <div ref={logsEndRef} />

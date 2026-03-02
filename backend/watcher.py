@@ -2,7 +2,6 @@ import re
 import os
 import time
 import threading
-import subprocess
 from typing import Optional
 
 def log(msg: str, on_log: Optional[callable] = None):
@@ -24,8 +23,7 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
     # Verificar que el mount point existe
     if not os.path.exists(mount_path):
         log(f"[Watcher] 🔴 CRÍTICO: Mount point NO EXISTE: {mount_path}", on_log)
-        log(f"[Watcher] 🔴 Verifica que rclone está corriendo: sudo systemctl status rclone", on_log)
-        log(f"[Watcher] 🔴 O intenta montar: rclone mount remote:/ /mnt/torbox --daemon", on_log)
+        log(f"[Watcher] 🔴 Verifica que el backend VFS esté levantado y /mnt/torbox montado", on_log)
         return None
 
     try:
@@ -91,7 +89,7 @@ def watch_for_file(
 ) -> Optional[str]:
     """
     Busca un archivo en TorBox por filename exacto.
-    Limpia caché de rclone cada ciclo, con limpieza AGRESIVA cada 5 minutos.
+    Fuerza refresco de estado del watcher por ciclo sin usar comandos externos.
     """
     start_time = time.time()
     msg = f"Buscando archivo: '{expected_filename}'"
@@ -99,13 +97,13 @@ def watch_for_file(
     if on_status:
         on_status("Searching", msg)
 
-    # Esperar a que rclone monte el archivo
-    log(f"[Watcher] Aguardando montaje en rclone...", on_log)
+    # Esperar a que el VFS monte el archivo
+    log(f"[Watcher] Aguardando montaje en VFS...", on_log)
     time.sleep(3)
     
-    # Limpiar caché inicial agresivamente
-    log(f"[Watcher] Limpiando caché de rclone...", on_log)
-    cleanup_rclone_cache(on_log)
+    # Refresco inicial (no-op en VFS custom)
+    log(f"[Watcher] Refrescando estado de VFS...", on_log)
+    cleanup_vfs_cache(on_log)
     
     cycle_count = 0
 
@@ -126,7 +124,7 @@ def watch_for_file(
 
         # Limpiar caché solo cada 60 ciclos (1 minuto) para evitar rate limiting
         if cycle_count > 0 and cycle_count % 60 == 0:
-            cleanup_rclone_cache(on_log, aggressive=(cycle_count % 300 == 0))
+            cleanup_vfs_cache(on_log, aggressive=(cycle_count % 300 == 0))
 
         found_path = find_file_path(expected_filename, title, mount_path, on_log, season, episode)
         if found_path:
@@ -139,41 +137,14 @@ def watch_for_file(
 
     return None
 
-def cleanup_rclone_cache(on_log: Optional[callable] = None, aggressive: bool = False):
+def cleanup_vfs_cache(on_log: Optional[callable] = None, aggressive: bool = False):
     """
-    Limpia el caché de rclone de múltiples formas para asegurar descubrimiento rápido.
-    Si aggressive=True, hace limpiezas más profundas.
+    Compatibilidad heredada: en VFS custom no hay rc para limpiar caché externamente.
     """
-    try:
-        # 1. Forget: limpia metadata cacheada
-        result = subprocess.run(["rclone", "rc", "vfs/forget"], capture_output=True, timeout=5, text=True)
-        if result.returncode == 0:
-            log(f"[Watcher] ✓ vfs/forget ejecutado", on_log)
-        else:
-            error_msg = result.stderr or result.stdout
-            if "connection refused" in error_msg.lower() or "127.0.0.1:5572" in error_msg:
-                log(f"[Watcher] 🔴 CRÍTICO: rclone rc NO activo (Puerto 5572 no responde)", on_log)
-                log(f"[Watcher] 🔴 Solución: Inicia rclone rc con: rclone rcd --rc-serve &", on_log)
-            else:
-                log(f"[Watcher] ⚠️ vfs/forget error: {error_msg[:100]}", on_log)
-                return
-        
-        # 2. Clear-cache (si existe)
-        result = subprocess.run(["rclone", "rc", "vfs/clear-cache"], capture_output=True, timeout=5, text=True)
-        if result.returncode == 0:
-            log(f"[Watcher] ✓ vfs/clear-cache ejecutado", on_log)
-        
-        # 3. Flush writes para sincronizar
-        subprocess.run(["rclone", "rc", "vfs/forget", "mount=/mnt/torbox"], capture_output=True, timeout=5)
-        
-        if aggressive:
-            log(f"[Watcher] 🔄 Limpieza AGRESIVA: Flush y reset de stat caches...", on_log)
-            subprocess.run(["rclone", "rc", "cache/expire"], capture_output=True, timeout=5)
-            
-    except subprocess.TimeoutExpired:
-        log(f"[Watcher] ⚠️ rclone rc timeout", on_log)
-    except Exception as e:
-        log(f"[Watcher] ⚠️ Error conectando con rclone rc: {e}", on_log)
+    if aggressive:
+        log(f"[Watcher] 🔄 Refresco agresivo solicitado (VFS TTL gestionado internamente)", on_log)
+    else:
+        log(f"[Watcher] ✓ Refresco solicitado (VFS custom)", on_log)
 
 
 def start_watcher_thread(
