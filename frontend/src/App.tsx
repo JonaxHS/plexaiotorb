@@ -135,6 +135,25 @@ export default function App() {
     const [personCredits, setPersonCredits] = useState<any[]>([]);
     const [personDetailsLoading, setPersonDetailsLoading] = useState(false);
 
+    // -- Timer State for Job Elapsed Time --
+    const [elapsedTime, setElapsedTime] = useState<number>(0);
+
+    // Función para formatear el tiempo transcurrido
+    const formatElapsedTime = (milliseconds: number): string => {
+        const totalSeconds = Math.floor(milliseconds / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        if (hours > 0) {
+            return `${hours}h ${minutes}m ${seconds}s`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${seconds}s`;
+        } else {
+            return `${seconds}s`;
+        }
+    };
+
     // Check initial setup status
     React.useEffect(() => {
         fetch(`${API_BASE}/status`)
@@ -184,7 +203,14 @@ export default function App() {
             fetch(`${API_BASE}/downloads/active`)
                 .then(r => r.json())
                 .then(d => {
-                    setActiveDownloads(d);
+                    // Agregar timestamps de inicio si no existen
+                    const updatedDownloads = { ...d };
+                    Object.entries(updatedDownloads).forEach(([id, job]: [string, any]) => {
+                        if (!job.client_started_at) {
+                            updatedDownloads[id] = { ...job, client_started_at: Date.now() };
+                        }
+                    });
+                    setActiveDownloads(updatedDownloads);
                 }).catch(() => { });
         }, 5000);
         return () => clearInterval(interval);
@@ -203,6 +229,17 @@ export default function App() {
 
         lastRcloneStatusRef.current = rcloneStatus;
     }, [rcloneStatus, rcloneReason]);
+
+    // Timer que actualiza cada segundo para mostrar el tiempo transcurrido
+    useEffect(() => {
+        if (Object.keys(activeDownloads).length === 0) return;
+        
+        const timerInterval = setInterval(() => {
+            setElapsedTime(prev => prev + 1000);
+        }, 1000);
+        
+        return () => clearInterval(timerInterval);
+    }, [Object.keys(activeDownloads).length > 0]);
 
     // Polling de logs por trabajo — en un efecto separado para evitar stale closure
     useEffect(() => {
@@ -1476,9 +1513,14 @@ export default function App() {
                                                                 {job.status}
                                                             </span>
                                                         </div>
-                                                        <p className="text-sm text-zinc-500 flex items-center gap-2 mb-4">
-                                                            {job.media_type === 'tv' ? <Tv className="w-3.5 h-3.5" /> : <Film className="w-3.5 h-3.5" />}
-                                                            {job.media_type === 'tv' ? `Temporada ${job.season} Episodio ${job.episode}` : 'Largometraje'}
+                                                        <p className="text-sm text-zinc-500 flex items-center gap-4 mb-4">
+                                                            <span className="flex items-center gap-2">
+                                                                {job.media_type === 'tv' ? <Tv className="w-3.5 h-3.5" /> : <Film className="w-3.5 h-3.5" />}
+                                                                {job.media_type === 'tv' ? `Temporada ${job.season} Episodio ${job.episode}` : 'Largometraje'}
+                                                            </span>
+                                                            <span className="text-[11px] text-amber-400/70 font-semibold bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+                                                                ⏱️ {formatElapsedTime(job.client_started_at ? Date.now() - job.client_started_at + elapsedTime : 0)}
+                                                            </span>
                                                         </p>
 
                                                         <div className="space-y-2">
