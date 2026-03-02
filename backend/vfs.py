@@ -157,7 +157,6 @@ class TorBoxVFS(pyfuse3.Operations):
         attr.st_size = size
         attr.st_blksize = 4096
         attr.st_blocks = (size + 511) // 512
-        attr.st_atime = attr.st_ctime = attr.st_mtime = timestamp
         attr.st_atime_ns = attr.st_ctime_ns = attr.st_mtime_ns = int(timestamp * 1e9)
         attr.generation = 0
         
