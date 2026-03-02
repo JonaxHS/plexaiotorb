@@ -157,7 +157,21 @@ class TorBoxVFS(pyfuse3.Operations):
         attr.st_size = size
         attr.st_blksize = 4096
         attr.st_blocks = (size + 511) // 512
-        attr.st_atime_ns = attr.st_ctime_ns = attr.st_mtime_ns = int(timestamp * 1e9)
+        ts_ns = int(timestamp * 1e9)
+
+        # Compatibilidad entre builds de pyfuse3 (algunas exponen *_ns, otras también st_atime/st_mtime/st_ctime)
+        for field_name, field_value in (
+            ("st_atime", int(timestamp)),
+            ("st_mtime", int(timestamp)),
+            ("st_ctime", int(timestamp)),
+            ("st_atime_ns", ts_ns),
+            ("st_mtime_ns", ts_ns),
+            ("st_ctime_ns", ts_ns),
+        ):
+            try:
+                setattr(attr, field_name, field_value)
+            except Exception:
+                pass
         attr.generation = 0
         
         attr.entry_timeout = 60    # TTL entries
