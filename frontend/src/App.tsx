@@ -1519,7 +1519,7 @@ export default function App() {
                                                                 {job.media_type === 'tv' ? `Temporada ${job.season} Episodio ${job.episode}` : 'Largometraje'}
                                                             </span>
                                                             <span className="text-[11px] text-amber-400/70 font-semibold bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
-                                                                ⏱️ {formatElapsedTime(job.client_started_at ? Date.now() - job.client_started_at + elapsedTime : 0)}
+                                                                ⏱️ {formatElapsedTime(job.client_started_at ? Date.now() - job.client_started_at : 0)}
                                                             </span>
                                                         </p>
 
