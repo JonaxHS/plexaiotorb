@@ -15,6 +15,11 @@ if python -c "import pyfuse3" >/dev/null 2>&1; then
 	echo "[$(date)] ✓ pyfuse3 disponible"
 else
 	echo "[$(date)] ⚠️ pyfuse3 no encontrado, instalando en runtime..."
+	echo "[$(date)] Instalando dependencias de compilación para pyfuse3 (pkg-config, build-essential, libfuse3-dev)..."
+	apt-get update && apt-get install -y --no-install-recommends \
+		pkg-config \
+		build-essential \
+		libfuse3-dev
 	pip install --no-cache-dir pyfuse3 || {
 		echo "[$(date)] ✗ No se pudo instalar pyfuse3"
 		exit 1
