@@ -11,13 +11,6 @@ from stat import S_IFREG, S_IFDIR, S_IFLNK
 import asyncio
 from vfs_client import TorBoxWebDAVClient, VFSFile
 
-try:
-    import pyfuse3_asyncio
-    pyfuse3_asyncio.enable()
-except Exception:
-    # En algunas builds, pyfuse3 ya funciona con asyncio sin este módulo
-    pass
-
 logger = logging.getLogger(__name__)
 
 class TorBoxVFS(pyfuse3.Operations):
@@ -186,6 +179,14 @@ class TorBoxVFS(pyfuse3.Operations):
 async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, mount_point: str):
     """Monta el VFS de TorBox"""
     logger.info(f"[VFS] Mounting TorBox at {mount_point}")
+
+    # Importar/activar bridge asyncio en runtime (con loop ya activo)
+    try:
+        import pyfuse3_asyncio
+        pyfuse3_asyncio.enable()
+    except Exception as e:
+        logger.error(f"[VFS] No se pudo activar pyfuse3_asyncio: {e}")
+        raise RuntimeError("pyfuse3_asyncio no disponible o no inicializable")
     
     vfs = TorBoxVFS(torbox_url, torbox_user, torbox_pass)
     
