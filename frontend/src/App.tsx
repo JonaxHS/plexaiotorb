@@ -408,7 +408,10 @@ export default function App() {
                     setSettingsForm({ 
                         tmdb_api_key: d.tmdb_api_key || '', 
                         aiostreams_url: d.aiostreams_url || '',
-                        use_original_titles: d.use_original_titles || false
+                        use_original_titles: d.use_original_titles || false,
+                        torbox_url: d.torbox_url || '',
+                        torbox_user: d.torbox_user || '',
+                        torbox_pass: d.torbox_pass || ''
                     });
                 }).catch(e => console.error(e));
         }
