@@ -11,6 +11,13 @@ from stat import S_IFREG, S_IFDIR, S_IFLNK
 import asyncio
 from vfs_client import TorBoxWebDAVClient, VFSFile
 
+try:
+    import pyfuse3_asyncio
+    pyfuse3_asyncio.enable()
+except Exception:
+    # En algunas builds, pyfuse3 ya funciona con asyncio sin este módulo
+    pass
+
 logger = logging.getLogger(__name__)
 
 class TorBoxVFS(pyfuse3.Operations):
@@ -184,12 +191,25 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
     
     try:
         await vfs.startup()
-        async with pyfuse3.mount(vfs, mount_point, foreground=False):
-            logger.info(f"[VFS] Mounted successfully at {mount_point}")
-            # Mantener corriendo
-            while True:
-                await asyncio.sleep(100)
+        fuse_options = set(pyfuse3.default_options)
+        fuse_options.add("fsname=torbox_vfs")
+        fuse_options.add("allow_other")
+        fuse_options.add("auto_unmount")
+
+        pyfuse3.init(vfs, mount_point, fuse_options)
+        logger.info(f"[VFS] Mounted successfully at {mount_point}")
+        await pyfuse3.main()
+    except asyncio.CancelledError:
+        logger.info("[VFS] Mount task cancelled")
+        raise
     except Exception as e:
         logger.error(f"[VFS] Mount failed: {e}")
-        await vfs.shutdown()
         raise
+    finally:
+        try:
+            pyfuse3.close(unmount=True)
+        except TypeError:
+            pyfuse3.close()
+        except Exception:
+            pass
+        await vfs.shutdown()
