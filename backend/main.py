@@ -61,6 +61,24 @@ def load_jobs():
         except Exception:
             active_jobs = {}
 
+def is_vfs_fuse_mounted(mount_point: str = "/mnt/torbox") -> bool:
+    """Valida que el mount sea realmente FUSE del VFS (no solo un volumen Docker)."""
+    try:
+        if not os.path.exists(mount_point):
+            return False
+
+        with open("/proc/mounts", "r", encoding="utf-8") as mounts_file:
+            for line in mounts_file:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                source, target, fstype = parts[0], parts[1], parts[2]
+                if target == mount_point and (fstype.startswith("fuse") or source == "torbox_vfs"):
+                    return True
+        return False
+    except Exception:
+        return False
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -83,7 +101,7 @@ async def on_startup():
         print("[Startup] Esperando a que VFS esté montado...")
         mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
         for attempt in range(30):  # 30 intentos x 1s = 30s max
-            if os.path.exists(mount_point) and os.path.ismount(mount_point):
+            if is_vfs_fuse_mounted(mount_point):
                 try:
                     item_count = len(os.listdir(mount_point))
                     print(f"[Startup] ✓ VFS montado y listo ({item_count} items)")
@@ -277,12 +295,14 @@ def update_settings(req: SettingsUpdate):
 @app.get("/api/vfs/status")
 def vfs_status():
     try:
-        if not os.path.exists("/mnt/torbox"):
-            return {"status": "disconnected", "reason": "mount_path_missing"}
-        if not os.path.ismount("/mnt/torbox"):
-            return {"status": "degraded", "reason": "not_a_mount"}
+        mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
 
-        item_count = len(os.listdir("/mnt/torbox"))
+        if not os.path.exists(mount_point):
+            return {"status": "disconnected", "reason": "mount_path_missing"}
+        if not is_vfs_fuse_mounted(mount_point):
+            return {"status": "degraded", "reason": "vfs_not_mounted"}
+
+        item_count = len(os.listdir(mount_point))
         return {"status": "connected", "items": item_count}
     except Exception as e:
         return {"status": "disconnected", "reason": str(e)}

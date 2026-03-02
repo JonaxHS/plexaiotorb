@@ -199,7 +199,6 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
         fuse_options = set(pyfuse3.default_options)
         fuse_options.add("fsname=torbox_vfs")
         fuse_options.add("allow_other")
-        fuse_options.add("auto_unmount")
 
         pyfuse3.init(vfs, mount_point, fuse_options)
         logger.info(f"[VFS] Mounted successfully at {mount_point}")
@@ -219,6 +218,11 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
             pyfuse3.close(unmount=True)
         except TypeError:
             pyfuse3.close()
+        except Exception:
+            pass
+        try:
+            import os
+            os.makedirs(mount_point, exist_ok=True)
         except Exception:
             pass
         await vfs.shutdown()
