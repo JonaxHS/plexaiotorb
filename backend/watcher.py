@@ -103,6 +103,18 @@ def watch_for_file(
     log(f"[Watcher] Aguardando montaje en rclone...", on_log)
     time.sleep(3)
     
+    # Refresh inicial: fuerza a rclone a releer desde TorBox
+    log(f"[Watcher] Refrescando caché de rclone (vfs/refresh)...", on_log)
+    try:
+        result = subprocess.run(["rclone", "rc", "vfs/refresh", "recursive=true"], 
+                              capture_output=True, timeout=10, text=True)
+        if result.returncode == 0:
+            log(f"[Watcher] ✓ vfs/refresh ejecutado", on_log)
+        else:
+            log(f"[Watcher] ⚠ vfs/refresh falló: {result.stderr}", on_log)
+    except Exception as e:
+        log(f"[Watcher] ⚠ Error en vfs/refresh: {e}", on_log)
+    
     # Limpiar caché inicial agresivamente
     log(f"[Watcher] Limpiando caché de rclone...", on_log)
     cleanup_rclone_cache(on_log)
