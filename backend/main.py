@@ -8,6 +8,7 @@ import os
 import docker
 import subprocess
 import time
+import asyncio
 import threading
 from config import config, reload_config
 import config as config_module
@@ -69,41 +70,33 @@ app.add_middleware(
 )
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     load_jobs()
     start_health_monitor(interval_seconds=3600, base_library_path=config.get("plex", {}).get("library_path", "/Media"))
     
-    # Iniciar monitoreo de rclone
-    start_rclone_monitor()
+    # Iniciar VFS custom
+    from vfs_manager import startup_vfs
+    await startup_vfs()
     
-    # Esperar a que rclone esté montado antes de reanudar búsquedas
-    print("[Startup] Esperando a que rclone esté montado...")
-    for attempt in range(60):  # 60 intentos x 1s = 60s max
-        try:
-            result = subprocess.run(
-                ["curl", "-s", "http://127.0.0.1:5572/rc/stats"],
-                capture_output=True,
-                timeout=2,
-                text=True
-            )
-            if result.returncode == 0 and os.path.exists("/mnt/torbox"):
-                item_count = len(os.listdir("/mnt/torbox"))
-                if item_count > 0:
-                    print(f"[Startup] ✓ Rclone montado y listo ({item_count} items)")
-                    break
-                else:
-                    print(f"[Startup] RC activo pero esperando items... ({attempt}s)")
-        except:
-            pass
-        time.sleep(1)
+    # Esperar a que el VFS esté montado
+    print("[Startup] Esperando a que VFS esté montado...")
+    mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
+    for attempt in range(30):  # 30 intentos x 1s = 30s max
+        if os.path.exists(mount_point) and os.path.ismount(mount_point):
+            try:
+                item_count = len(os.listdir(mount_point))
+                print(f"[Startup] ✓ VFS montado y listo ({item_count} items)")
+                break
+            except:
+                pass
+        print(f"[Startup] Esperando VFS... ({attempt}s)")
+        await asyncio.sleep(1)
     else:
-        print("[Startup] ⚠️ Rclone no respondió después de 60s. Continuando sin reanudar búsquedas.")
-        return
+        print("[Startup] ⚠️ VFS no se montó después de 30s. Continuando...")
     
-    # Reanudar búsquedas pendientes (SOLO si rclone está montado)
+    # Reanudar búsquedas pendientes
     pending_jobs = [job_id for job_id, job in active_jobs.items() 
                     if job.get("status") not in ["Completed", "Error"]]
-    
     if pending_jobs:
         print(f"[Jobs] Reanudando {len(pending_jobs)} búsquedas pendientes...")
         for job_id in pending_jobs:
@@ -117,6 +110,12 @@ def on_startup():
                     threading.Thread(target=initiate_download_process, args=(req_data, job_id), daemon=True).start()
                 except Exception as e:
                     print(f"[Jobs] Error reanudando {job_id}: {e}")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    from vfs_manager import shutdown_vfs
+    await shutdown_vfs()
+    print("[Shutdown] VFS stopped")
 
 def start_rclone_monitor():
     """Monitorea rclone y se autorecupera si falla RC o el mount FUSE."""

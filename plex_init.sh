@@ -1,39 +1,18 @@
 #!/bin/bash
-# Install rclone and fuse if they don't exist
-if ! command -v rclone &> /dev/null; then
-    echo "Installing rclone and fuse in Plex container..."
-    apt-get update && apt-get install -y rclone fuse
+# Plex mount script - el VFS es montado por el backend
+# Solo necesitamos preparar el directorio
+
+if ! command -v fuse &> /dev/null; then
+    echo "Installing fuse..."
+    apt-get update && apt-get install -y libfuse3-0
 fi
 
-# Give it a second just in case
-sleep 2
+# Crear directorio si no existe
+mkdir -p /mnt/torbox
 
-# Check if config exists and torbox remote is defined
-if grep -q "\[torbox\]" /rclone_config/rclone.conf 2>/dev/null; then
-    # Unmount if already mounted
-    umount -f /mnt/torbox 2>/dev/null || true
-    
-    # Needs to be created
-    mkdir -p /mnt/torbox
-    
-    echo "Mounting torbox WebDAV inside Plex container natively..."
-    rclone mount torbox: /mnt/torbox \
-        --config /rclone_config/rclone.conf \
-        --vfs-cache-mode full \
-        --vfs-cache-max-age 24h \
-        --vfs-cache-max-size 10G \
-        --vfs-read-chunk-size 128M \
-        --vfs-read-chunk-size-limit off \
-        --buffer-size 32M \
-        --dir-cache-time 30s \
-        --attr-timeout 10s \
-        --poll-interval 0 \
-        --rc \
-        --rc-addr :5572 \
-        --rc-no-auth \
-        --allow-non-empty \
-        --allow-other \
-        --daemon
-else
-    echo "rclone.conf not completely set up yet. Skipping mount until backend configures it (checked /rclone_config/rclone.conf)."
-fi
+echo "✓ Mount point /mnt/torbox preparado"
+echo "✓ Esperando a que el backend monte el VFS..."
+
+# El VFS será montado desde el backend
+# Solo iniciar Plex
+exec "$@"
