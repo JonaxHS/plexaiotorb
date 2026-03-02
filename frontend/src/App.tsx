@@ -79,7 +79,7 @@ export default function App() {
     const [loadingStreams, setLoadingStreams] = useState(false);
 
     // -- New Library State --
-    const [activeTab, setActiveTab] = useState<'search' | 'library'>('search');
+    const [activeTab, setActiveTab] = useState<'search' | 'library' | 'settings' | 'activity'>('search');
     const [libraryData, setLibraryData] = useState<{ movies: any[], shows: any[] }>({ movies: [], shows: [] });
     const [loadingLibrary, setLoadingLibrary] = useState(false);
 
@@ -95,7 +95,6 @@ export default function App() {
     const [globalLogs, setGlobalLogs] = useState<string[]>([]);
     const [rcloneStatus, setRcloneStatus] = useState<string>("checking");
     const [rcloneReason, setRcloneReason] = useState<string>("");
-    const [showSettings, setShowSettings] = useState(false);
     const [notifications, setNotifications] = useState<string[]>([]);
     const [activeDownloads, setActiveDownloads] = useState<Record<string, any>>({});
     const [showTorBoxBrowser, setShowTorBoxBrowser] = useState(false);
@@ -350,9 +349,9 @@ export default function App() {
         };
     }, [hasMore, discoveryLoading, currentPage, discoveryType, selectedGenre, query]);
 
-    // Fetch Live Settings when Modal Opens
+    // Fetch Live Settings when Settings Tab Opens
     useEffect(() => {
-        if (showSettings && !setupMode) {
+        if (activeTab === 'settings' && !setupMode) {
             fetch(`${API_BASE}/settings`)
                 .then(r => r.json())
                 .then(d => {
@@ -363,7 +362,7 @@ export default function App() {
                     });
                 }).catch(e => console.error(e));
         }
-    }, [showSettings, setupMode]);
+    }, [activeTab, setupMode]);
 
     const handleSaveSettings = async () => {
         setSettingsSaving(true);
@@ -375,7 +374,6 @@ export default function App() {
             });
             if (res.ok) {
                 setGlobalNotification({ message: 'Ajustes guardados en vivo correctamente', type: 'success' });
-                setShowSettings(false);
             } else {
                 setGlobalNotification({ message: 'Error al verificar ajustes (HTTP)', type: 'error' });
             }
@@ -1215,7 +1213,7 @@ export default function App() {
                         <p className="text-[10px] text-amber-500 text-center -mt-2">{rcloneReason || 'Mount inestable, autoreparación en curso'}</p>
                     )}
                     <button
-                        onClick={() => setShowSettings(true)}
+                        onClick={() => setActiveTab('settings')}
                         className="w-full flex items-center justify-center gap-2 px-4 py-2 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded-lg transition-colors text-sm font-medium"
                     >
                         <Settings className="w-4 h-4" /> Configuración
@@ -1246,8 +1244,14 @@ export default function App() {
                                     className="w-full bg-zinc-900 border border-zinc-700/50 rounded-full py-3 pl-12 pr-4 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all font-medium shadow-inner"
                                 />
                             </form>
-                        ) : (
+                        ) : activeTab === 'library' ? (
                             <h2 className="text-xl font-bold text-zinc-100">Vista de Librería Local</h2>
+                        ) : activeTab === 'settings' ? (
+                            <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
+                                <Settings className="w-5 h-5 text-amber-500" /> Ajustes y Configuración
+                            </h2>
+                        ) : (
+                            <h2 className="text-xl font-bold text-zinc-100">Actividad de Descargas</h2>
                         )}
                     </div>
                 </header>
@@ -1562,6 +1566,207 @@ export default function App() {
                                     </div>
                                 )}
                             </div>
+                        ) : activeTab === 'settings' ? (
+                            /* ----- SETTINGS PAGE ----- */
+                            <div className="max-w-6xl mx-auto py-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                    {/* Configuration Panel */}
+                                    <div className="lg:col-span-1 space-y-5">
+                                        <h3 className="font-semibold text-zinc-300 text-sm uppercase tracking-wide flex items-center gap-2 pb-3 border-b border-zinc-800">
+                                            <Settings className="w-4 h-4 text-amber-500" /> Configuración en Vivo
+                                        </h3>
+
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">TMDB API Key</label>
+                                                <input
+                                                    type="password"
+                                                    value={settingsForm.tmdb_api_key}
+                                                    onChange={e => setSettingsForm({ ...settingsForm, tmdb_api_key: e.target.value })}
+                                                    className="w-full bg-black/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50 transition-colors placeholder:text-zinc-700"
+                                                    placeholder="Ingresa tu token de the movie database"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">AIOStreams URL Base</label>
+                                                <input
+                                                    type="url"
+                                                    value={settingsForm.aiostreams_url}
+                                                    onChange={e => setSettingsForm({ ...settingsForm, aiostreams_url: e.target.value })}
+                                                    className="w-full bg-black/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50 transition-colors placeholder:text-zinc-700"
+                                                    placeholder="https://aiostreams.example.com"
+                                                />
+                                                <p className="text-[10px] text-zinc-500 font-medium">Requerido para generar enlaces Magnets o Streaming</p>
+                                            </div>
+                                            <div className="space-y-3 pt-4 border-t border-zinc-800/50">
+                                                <div className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-zinc-100">Usar Títulos Originales</p>
+                                                        <p className="text-xs text-zinc-500 mt-1">Guardar usando nombre original en inglés (ej: "Bad Boys Ride or Die") en lugar de traducción</p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setSettingsForm({ ...settingsForm, use_original_titles: !settingsForm.use_original_titles })}
+                                                        className={`px-4 py-2 rounded-lg font-semibold text-xs transition-all ${
+                                                            settingsForm.use_original_titles 
+                                                                ? 'bg-green-500/20 border border-green-500/50 text-green-400' 
+                                                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                                                        }`}
+                                                    >
+                                                        {settingsForm.use_original_titles ? '✓ Activado' : '○ Desactivado'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-4 space-y-3 border-t border-zinc-800/50">
+                                            <button
+                                                onClick={handleSaveSettings}
+                                                disabled={settingsSaving}
+                                                className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold shadow-lg shadow-amber-500/20 rounded-lg transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {settingsSaving ? <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-zinc-950"></div> : <Settings className="w-4 h-4" />}
+                                                Guardar Cambios
+                                            </button>
+
+                                            <div className="border-t border-zinc-800/50 pt-3">
+                                                <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide text-center mb-2">Mantenimiento del Sistema</h4>
+                                                
+                                                <button
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await fetch(`${API_BASE}/system/reset-rclone`, { method: 'POST' });
+                                                            const data = await res.json();
+                                                            addLog('[System] ✓ Rclone reseteado: ' + data.message);
+                                                        } catch (e) {
+                                                            addLog('[System] ✗ Error reseteando rclone: ' + e.message);
+                                                        }
+                                                    }}
+                                                    className="w-full py-2 bg-zinc-900 border border-blue-500/20 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 font-bold rounded-lg transition-all text-sm mt-2"
+                                                >
+                                                    🔄 Resetear Rclone
+                                                </button>
+                                                
+                                                <button
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await fetch(`${API_BASE}/system/reset-plex`, { method: 'POST' });
+                                                            const data = await res.json();
+                                                            addLog('[System] ✓ Plex reiniciado: ' + data.message);
+                                                        } catch (e) {
+                                                            addLog('[System] ✗ Error reiniciando Plex: ' + e.message);
+                                                        }
+                                                    }}
+                                                    className="w-full py-2 bg-zinc-900 border border-purple-500/20 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 font-bold rounded-lg transition-all text-sm mt-2"
+                                                >
+                                                    🎬 Reiniciar Plex
+                                                </button>
+                                                
+                                                <button
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await fetch(`${API_BASE}/system/reset-all`, { method: 'POST' });
+                                                            const data = await res.json();
+                                                            addLog('[System] ✓ Sistema completo reseteado');
+                                                            data.results?.forEach(r => addLog('[System] ' + r));
+                                                        } catch (e) {
+                                                            addLog('[System] ✗ Error en reset total: ' + e.message);
+                                                        }
+                                                    }}
+                                                    className="w-full py-2 bg-zinc-900 border border-red-500/20 text-red-400 hover:text-red-300 hover:bg-red-500/10 font-bold rounded-lg transition-all text-sm mt-2"
+                                                >
+                                                    ⚡ Resetear Todo
+                                                </button>
+
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!confirm("⚠️ ¿ELIMINAR TODA LA BIBLIOTECA? Esta acción es IRREVERSIBLE") || 
+                                                            !confirm("🔥 ÚLTIMA CONFIRMACIÓN: Esto eliminará TODOS los symlinks de /Media/Movies y /Media/Shows")) {
+                                                            return;
+                                                        }
+                                                        try {
+                                                            const res = await fetch(`${API_BASE}/library/clear-all`, { method: 'DELETE' });
+                                                            const data = await res.json();
+                                                            addLog('[Library] 🗑️ ✓ ' + data.message);
+                                                            showNotification('Biblioteca completamente limpiada', 'success');
+                                                        } catch (e) {
+                                                            addLog('[Library] ✗ Error limpiando biblioteca: ' + e.message);
+                                                            showNotification('Error al limpiar biblioteca', 'error');
+                                                        }
+                                                    }}
+                                                    className="w-full py-2 bg-red-950/30 border border-red-500/50 text-red-400 hover:text-red-200 hover:bg-red-500/20 font-bold rounded-lg transition-all text-sm mt-2"
+                                                >
+                                                    🗑️ Limpiar Biblioteca Completa
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
+                                                        setActiveTab('search');
+                                                        setSetupMode(true);
+                                                        setSetupStep(1);
+                                                    }}
+                                                    className="w-full py-2 bg-zinc-900 border border-orange-500/20 text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 font-bold rounded-lg transition-all text-sm mt-2"
+                                                >
+                                                    🔧 Asistente Completo
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Logs Panel */}
+                                    <div className="lg:col-span-2 flex flex-col space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="font-semibold text-zinc-300 text-sm uppercase tracking-wide flex items-center gap-2 pb-3 border-b border-zinc-800 flex-1">
+                                                <Activity className="w-4 h-4 text-amber-500" /> Consola del Sistema
+                                            </h3>
+                                            <div className="flex bg-zinc-800 p-1 rounded-lg">
+                                                <button
+                                                    onClick={() => setActiveLogTab('backend')}
+                                                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'backend' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                                >Backend / API</button>
+                                                <button
+                                                    onClick={() => setActiveLogTab('rclone')}
+                                                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'rclone' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                                >Rclone / Plex</button>
+                                                <button
+                                                    onClick={() => setActiveLogTab('local')}
+                                                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'local' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                                >GUI Local</button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 overflow-y-auto font-mono text-[11px] text-zinc-400 space-y-1 bg-black/50 p-4 rounded-lg border border-zinc-800/50 max-h-96">
+                                            {activeLogTab === 'local' ? (
+                                                /* Mostrar SOLO GUI Local logs */
+                                                logs.length > 0 ? logs.map((log, i) => (
+                                                    <div key={`local-${i}`} className="leading-relaxed whitespace-pre-wrap break-words text-zinc-400 border-l-2 border-zinc-600 pl-2 py-0.5">
+                                                        {log}
+                                                    </div>
+                                                )) : <div className="text-zinc-600 italic">No hay logs locales...</div>
+
+                                            ) : activeLogTab === 'backend' ? (
+                                                /* Mostrar Backend Logs */
+                                                globalLogs.filter(l => l.includes('plexaiotorb-backend')).length > 0 ?
+                                                    globalLogs.filter(l => l.includes('plexaiotorb-backend')).map((log, i) => (
+                                                        <div key={`be-${i}`} className="leading-relaxed whitespace-pre-wrap break-words text-blue-200 border-l-2 border-blue-500 pl-2 py-0.5">
+                                                            {log}
+                                                        </div>
+                                                    )) : <div className="text-zinc-600 italic">Esperando eventos del backend...</div>
+
+                                            ) : (
+                                                /* Mostrar Rclone/Plex Logs */
+                                                globalLogs.filter(l => !l.includes('plexaiotorb-backend')).length > 0 ?
+                                                    globalLogs.filter(l => !l.includes('plexaiotorb-backend')).map((log, i) => (
+                                                        <div key={`rc-${i}`} className="leading-relaxed whitespace-pre-wrap break-words text-amber-200 border-l-2 border-amber-500 pl-2 py-0.5">
+                                                            {log}
+                                                        </div>
+                                                    )) : <div className="text-zinc-600 italic">Esperando eventos de rclone/plex...</div>
+                                            )}
+
+                                            <div ref={logsEndRef} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         ) : (
                             /* ----- LIBRARY GRID ----- */
                             loadingLibrary ? (
@@ -1613,221 +1818,7 @@ export default function App() {
                 </main>
             </div>
 
-            {/* Settings Modal */}
-            {
-                showSettings && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-                        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
-                            <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
-                                <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
-                                    <Settings className="w-5 h-5 text-amber-500" /> Ajustes y Consola
-                                </h2>
-                                <button onClick={() => setShowSettings(false)} className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 hover:text-white transition-colors">
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
 
-                            <div className="flex-1 overflow-y-auto flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-zinc-800">
-                                {/* Configuration Panel */}
-                                <div className="p-6 space-y-5 lg:w-1/3 flex flex-col">
-                                    <h3 className="font-semibold text-zinc-300 text-sm uppercase tracking-wide">Configuración en Vivo</h3>
-
-                                    <div className="space-y-4 flex-1">
-                                        <div className="space-y-2">
-                                            <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">TMDB API Key</label>
-                                            <input
-                                                type="password"
-                                                value={settingsForm.tmdb_api_key}
-                                                onChange={e => setSettingsForm({ ...settingsForm, tmdb_api_key: e.target.value })}
-                                                className="w-full bg-black/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50 transition-colors placeholder:text-zinc-700"
-                                                placeholder="Ingresa tu token de the movie database"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">AIOStreams URL Base</label>
-                                            <input
-                                                type="url"
-                                                value={settingsForm.aiostreams_url}
-                                                onChange={e => setSettingsForm({ ...settingsForm, aiostreams_url: e.target.value })}
-                                                className="w-full bg-black/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50 transition-colors placeholder:text-zinc-700"
-                                                placeholder="https://aiostreams.example.com"
-                                            />
-                                            <p className="text-[10px] text-zinc-500 font-medium">Requerido para generar enlaces Magnets o Streaming</p>
-                                        </div>
-                                        <div className="space-y-3 pt-4 border-t border-zinc-800/50">
-                                            <div className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg">
-                                                <div>
-                                                    <p className="text-sm font-semibold text-zinc-100">Usar Títulos Originales</p>
-                                                    <p className="text-xs text-zinc-500 mt-1">Guardar usando nombre original en inglés (ej: "Bad Boys Ride or Die") en lugar de traducción</p>
-                                                </div>
-                                                <button
-                                                    onClick={() => setSettingsForm({ ...settingsForm, use_original_titles: !settingsForm.use_original_titles })}
-                                                    className={`px-4 py-2 rounded-lg font-semibold text-xs transition-all ${
-                                                        settingsForm.use_original_titles 
-                                                            ? 'bg-green-500/20 border border-green-500/50 text-green-400' 
-                                                            : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
-                                                    }`}
-                                                >
-                                                    {settingsForm.use_original_titles ? '✓ Activado' : '○ Desactivado'}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                    </div>
-
-                                    <div className="pt-4 space-y-3 border-t border-zinc-800/50">
-                                        <button
-                                            onClick={handleSaveSettings}
-                                            disabled={settingsSaving}
-                                            className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold shadow-lg shadow-amber-500/20 rounded-lg transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            {settingsSaving ? <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-zinc-950"></div> : <Settings className="w-4 h-4" />}
-                                            Guardar Cambios
-                                        </button>
-
-                                        <div className="border-t border-zinc-800/50 pt-3">
-                                            <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide text-center mb-2">Mantenimiento del Sistema</h4>
-                                            
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        const res = await fetch(`${API_BASE}/system/reset-rclone`, { method: 'POST' });
-                                                        const data = await res.json();
-                                                        addLog('[System] ✓ Rclone reseteado: ' + data.message);
-                                                    } catch (e) {
-                                                        addLog('[System] ✗ Error reseteando rclone: ' + e.message);
-                                                    }
-                                                }}
-                                                className="w-full py-2 bg-zinc-900 border border-blue-500/20 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 font-bold rounded-lg transition-all text-sm mt-2"
-                                            >
-                                                🔄 Resetear Rclone
-                                            </button>
-                                            
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        const res = await fetch(`${API_BASE}/system/reset-plex`, { method: 'POST' });
-                                                        const data = await res.json();
-                                                        addLog('[System] ✓ Plex reiniciado: ' + data.message);
-                                                    } catch (e) {
-                                                        addLog('[System] ✗ Error reiniciando Plex: ' + e.message);
-                                                    }
-                                                }}
-                                                className="w-full py-2 bg-zinc-900 border border-purple-500/20 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 font-bold rounded-lg transition-all text-sm mt-2"
-                                            >
-                                                🎬 Reiniciar Plex
-                                            </button>
-                                            
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        const res = await fetch(`${API_BASE}/system/reset-all`, { method: 'POST' });
-                                                        const data = await res.json();
-                                                        addLog('[System] ✓ Sistema completo reseteado');
-                                                        data.results?.forEach(r => addLog('[System] ' + r));
-                                                    } catch (e) {
-                                                        addLog('[System] ✗ Error en reset total: ' + e.message);
-                                                    }
-                                                }}
-                                                className="w-full py-2 bg-zinc-900 border border-red-500/20 text-red-400 hover:text-red-300 hover:bg-red-500/10 font-bold rounded-lg transition-all text-sm mt-2"
-                                            >
-                                                ⚡ Resetear Todo
-                                            </button>
-
-                                            <button
-                                                onClick={async () => {
-                                                    if (!confirm("⚠️ ¿ELIMINAR TODA LA BIBLIOTECA? Esta acción es IRREVERSIBLE") || 
-                                                        !confirm("🔥 ÚLTIMA CONFIRMACIÓN: Esto eliminará TODOS los symlinks de /Media/Movies y /Media/Shows")) {
-                                                        return;
-                                                    }
-                                                    try {
-                                                        const res = await fetch(`${API_BASE}/library/clear-all`, { method: 'DELETE' });
-                                                        const data = await res.json();
-                                                        addLog('[Library] 🗑️ ✓ ' + data.message);
-                                                        showNotification('Biblioteca completamente limpiada', 'success');
-                                                    } catch (e) {
-                                                        addLog('[Library] ✗ Error limpiando biblioteca: ' + e.message);
-                                                        showNotification('Error al limpiar biblioteca', 'error');
-                                                    }
-                                                }}
-                                                className="w-full py-2 bg-red-950/30 border border-red-500/50 text-red-400 hover:text-red-200 hover:bg-red-500/20 font-bold rounded-lg transition-all text-sm mt-2"
-                                            >
-                                                🗑️ Limpiar Biblioteca Completa
-                                            </button>
-
-                                            <button
-                                                onClick={() => {
-                                                    setShowSettings(false);
-                                                    setSetupMode(true);
-                                                    setSetupStep(1);
-                                                }}
-                                                className="w-full py-2 bg-zinc-900 border border-orange-500/20 text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 font-bold rounded-lg transition-all text-sm mt-2"
-                                            >
-                                                🔧 Asistente Completo
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Logs Panel */}
-                                <div className="p-6 flex-1 flex flex-col max-h-96 lg:max-h-full">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="font-semibold text-zinc-300 text-sm uppercase tracking-wide flex items-center gap-2">
-                                            <Activity className="w-4 h-4 text-amber-500" /> Consola del Sistema
-                                        </h3>
-                                        <div className="flex bg-zinc-800 p-1 rounded-lg">
-                                            <button
-                                                onClick={() => setActiveLogTab('backend')}
-                                                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'backend' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                            >Backend / API</button>
-                                            <button
-                                                onClick={() => setActiveLogTab('rclone')}
-                                                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'rclone' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                            >Rclone / Plex</button>
-                                            <button
-                                                onClick={() => setActiveLogTab('local')}
-                                                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${activeLogTab === 'local' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                            >GUI Local</button>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex-1 overflow-y-auto font-mono text-[11px] text-zinc-400 space-y-1 bg-black/50 p-4 rounded-lg border border-zinc-800/50">
-                                        {activeLogTab === 'local' ? (
-                                            /* Mostrar SOLO GUI Local logs */
-                                            logs.length > 0 ? logs.map((log, i) => (
-                                                <div key={`local-${i}`} className="leading-relaxed whitespace-pre-wrap break-words text-zinc-400 border-l-2 border-zinc-600 pl-2 py-0.5">
-                                                    {log}
-                                                </div>
-                                            )) : <div className="text-zinc-600 italic">No hay logs locales...</div>
-
-                                        ) : activeLogTab === 'backend' ? (
-                                            /* Mostrar Backend Logs */
-                                            globalLogs.filter(l => l.includes('plexaiotorb-backend')).length > 0 ?
-                                                globalLogs.filter(l => l.includes('plexaiotorb-backend')).map((log, i) => (
-                                                    <div key={`be-${i}`} className="leading-relaxed whitespace-pre-wrap break-words text-blue-200 border-l-2 border-blue-500 pl-2 py-0.5">
-                                                        {log}
-                                                    </div>
-                                                )) : <div className="text-zinc-600 italic">Esperando eventos del backend...</div>
-
-                                        ) : (
-                                            /* Mostrar Rclone/Plex Logs */
-                                            globalLogs.filter(l => !l.includes('plexaiotorb-backend')).length > 0 ?
-                                                globalLogs.filter(l => !l.includes('plexaiotorb-backend')).map((log, i) => (
-                                                    <div key={`rc-${i}`} className="leading-relaxed whitespace-pre-wrap break-words text-amber-200 border-l-2 border-amber-500 pl-2 py-0.5">
-                                                        {log}
-                                                    </div>
-                                                )) : <div className="text-zinc-600 italic">Esperando eventos de rclone/plex...</div>
-                                        )}
-
-                                        <div ref={logsEndRef} />
-                                    </div>
-                                </div>
-                            </div>
-
-                        </div>
-                    </div>
-                )
-            }
 
             {/* Details & Streams Modal */}
             {
