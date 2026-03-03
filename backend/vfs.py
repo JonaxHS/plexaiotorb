@@ -190,44 +190,26 @@ class TorBoxVFS(pyfuse3.Operations):
         return self._make_attr(inode, is_dir, 0)
 
 async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, mount_point: str):
-    """Monta el VFS de TorBox"""
+    """Monta el VFS de TorBox usando un hilo separado para no bloquear FastAPI."""
     logger.info(f"[VFS] Mounting TorBox at {mount_point}")
-
-    # Intentar bridge asyncio; fallback a loop Trio si no está disponible
-    use_asyncio_bridge = False
-    try:
-        import pyfuse3_asyncio
-        pyfuse3_asyncio.enable()
-        use_asyncio_bridge = True
-        logger.info("[VFS] pyfuse3_asyncio habilitado exitosamente")
-    except ModuleNotFoundError as e:
-        logger.warning(f"[VFS] pyfuse3_asyncio no disponible (ModuleNotFoundError): {e}. Usando backend Trio")
-    except Exception as e:
-        logger.error(f"[VFS] FALLO CRÍTICO al activar pyfuse3_asyncio: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        logger.warning("[VFS] Usando backend Trio como fallback (puede causar cuelgues con FastAPI)")
     
     vfs = TorBoxVFS(torbox_url, torbox_user, torbox_pass)
     
     try:
         await vfs.startup()
+        
+        # Opciones FUSE mínimas y compatibles (sin nonempty que no está disponible en FUSE3)
         fuse_options = set(pyfuse3.default_options)
         fuse_options.add("fsname=torbox_vfs")
         fuse_options.add("allow_other")
-        
-        # Opcional: ajustar opciones en mac vs linux
-        import sys
-        if sys.platform != 'darwin':
-            fuse_options.add("nonempty")
 
         pyfuse3.init(vfs, mount_point, fuse_options)
         logger.info(f"[VFS] Mounted successfully at {mount_point}")
-        if use_asyncio_bridge:
-            await pyfuse3.main()
-        else:
-            import trio
-            await asyncio.to_thread(trio.run, pyfuse3.main)
+        
+        # Ejecutar el bucle de eventos FUSE en un hilo separado del threadpool
+        # para NO bloquear el event loop de asyncio/FastAPI
+        await asyncio.to_thread(pyfuse3.main)
+        
     except asyncio.CancelledError:
         logger.info("[VFS] Mount task cancelled")
         raise
