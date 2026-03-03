@@ -105,19 +105,72 @@ class TorBoxWebDAVClient:
         return []
 
     def get_file_info(self, path: str) -> Optional[VFSFile]:
-        """Obtiene info de un archivo específico."""
+        """Obtiene info de un archivo/directorio específico (PROPFIND Depth:0)."""
         try:
             url = self.torbox_url + path
             resp = self.session.request('PROPFIND', url, headers={'Depth': '0'}, timeout=10)
             if resp.status_code not in [207, 200]:
                 return None
 
-            files = self._parse_propfind(resp.text, path)
-            return files[0] if files else None
+            # Para Depth:0 el único ítem es el mismo objetivo — NO lo saltamos
+            return self._parse_propfind_single(resp.text, path)
 
         except Exception as e:
             logger.error(f"[VFSClient] Error getting info for {path}: {e}")
             return None
+
+    def _parse_propfind_single(self, xml: str, path: str) -> Optional[VFSFile]:
+        """Parsea la respuesta PROPFIND para un solo ítem (incluyendo él mismo)."""
+        try:
+            import xml.etree.ElementTree as ET
+            from urllib.parse import unquote
+
+            root = ET.fromstring(xml)
+
+            for response in root.iter():
+                if not response.tag.endswith('}response') and response.tag != 'response':
+                    continue
+
+                ns = ''
+                if '}' in response.tag:
+                    ns = response.tag.split('}')[0] + '}'
+
+                href_elem = response.find(f'{ns}href')
+                if href_elem is None:
+                    continue
+
+                props = response.find(f'{ns}propstat/{ns}prop') or response.find(f'{ns}prop')
+                if props is None:
+                    continue
+
+                is_dir = props.find(f'{ns}resourcetype/{ns}collection') is not None
+
+                href_normalized = self._normalize_href(href_elem.text or '').rstrip('/')
+                name = unquote(href_normalized.split('/')[-1]) if href_normalized else ''
+
+                size_elem = props.find(f'{ns}getcontentlength')
+                size = int(size_elem.text) if size_elem is not None and size_elem.text else 0
+
+                mtime_elem = props.find(f'{ns}getlastmodified')
+                mtime = datetime.now()
+                if mtime_elem is not None and mtime_elem.text:
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        mtime = parsedate_to_datetime(mtime_elem.text)
+                    except Exception:
+                        pass
+
+                return VFSFile(
+                    name=name,
+                    size=size,
+                    is_dir=is_dir,
+                    mtime=mtime,
+                    path=href_normalized
+                )
+
+        except Exception as e:
+            logger.error(f"[VFSClient] Error parsing single PROPFIND: {e}")
+        return None
 
     def read_file(self, path: str, offset: int = 0, size: int = None) -> bytes:
         """Lee contenido de un archivo."""
