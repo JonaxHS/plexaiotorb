@@ -1237,10 +1237,16 @@ def list_torbox_dir(path: str = "/"):
             # Filtrar elementos inaccesibles intentando hacer stat
             try:
                 stat_info = entry.stat()
-                # Si podemos leer el stat, el archivo/directorio es accesible
+                is_dir = entry.is_dir()
+                
+                # Bug del VFS: archivos grandes reportados como directorios
+                # Si un "directorio" tiene más de 10MB, es realmente un archivo
+                if is_dir and stat_info.st_size > 10_000_000:  # > 10MB
+                    is_dir = False
+                
                 items.append({
                     "name": entry.name,
-                    "is_dir": entry.is_dir(),
+                    "is_dir": is_dir,
                     "path": os.path.relpath(entry.path, base),
                     "size": stat_info.st_size
                 })
