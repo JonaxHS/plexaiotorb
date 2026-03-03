@@ -29,6 +29,9 @@ services:
     environment:
       - TZ=UTC
       - CONFIG_PATH=/app/config/config.yaml
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
   plex:
     image: lscr.io/linuxserver/plex:latest
