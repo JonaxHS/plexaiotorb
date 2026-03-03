@@ -1238,6 +1238,11 @@ def list_torbox_dir(path: str = "/"):
             # El VFS de TorBox muestra directorios fantasma con permisos d?????????
             # Filtrar elementos inaccesibles intentando hacer stat
             try:
+                # Verificar que el archivo/directorio realmente existe
+                if not os.path.exists(entry.path):
+                    logger.debug(f"[VFS] Skipping non-existent entry: {entry.name}")
+                    continue
+                
                 stat_info = entry.stat()
                 is_dir = entry.is_dir()
                 
