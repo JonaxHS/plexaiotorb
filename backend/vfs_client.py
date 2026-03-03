@@ -68,6 +68,56 @@ class TorBoxWebDAVClient:
             self._session.close()
             self._session = None
 
+    def warm_up_all_dirs(self) -> int:
+        """
+        Pre-carga TODO el contenido en UNA sola petición PROPFIND Depth:2.
+        Evita múltiples requests que causarían rate-limiting (429).
+        Retorna el número de carpetas raíz cacheadas.
+        """
+        try:
+            url = self.torbox_url + "/"
+            resp = self.session.request('PROPFIND', url, headers={'Depth': '2'}, timeout=30)
+            if resp.status_code == 429:
+                logger.warning("[VFSClient] Rate limited en warm_up. Reintentando Depth:1...")
+                resp = self.session.request('PROPFIND', url, headers={'Depth': '1'}, timeout=30)
+            if resp.status_code not in [207, 200]:
+                logger.error(f"[VFSClient] warm_up_all_dirs: HTTP {resp.status_code}")
+                return 0
+
+            # Parsear una sola vez con todos los ítems y organizarlos por directorio padre
+            all_files = self._parse_propfind(resp.text, "/")
+            
+            # Agrupar por directorio padre
+            from collections import defaultdict
+            by_parent: dict = defaultdict(list)
+            root_items = []
+            for f in all_files:
+                parts = f.path.rstrip('/').rsplit('/', 1)
+                if len(parts) == 2 and parts[0]:
+                    parent = parts[0]
+                    by_parent[parent].append(f)
+                else:
+                    root_items.append(f)
+
+            # El root siempre son los ítems directamente bajo /
+            # (items que tienen exactamente un segmento de path)
+            real_root = [f for f in all_files if f.path.count('/') == 1]
+            if real_root:
+                self.dir_cache['/'] = DirCache(files=real_root, timestamp=datetime.now())
+                logger.info(f"[VFSClient] ✓ Raíz cacheada: {len(real_root)} ítems")
+
+            # Cachear cada subdirectorio
+            for parent_path, children in by_parent.items():
+                self.dir_cache[parent_path] = DirCache(files=children, timestamp=datetime.now())
+
+            total_dirs = len(by_parent) + (1 if real_root else 0)
+            logger.info(f"[VFSClient] ✓ warm_up completo: {total_dirs} directorios cacheados")
+            return len(real_root)
+
+        except Exception as e:
+            logger.error(f"[VFSClient] Error en warm_up_all_dirs: {e}")
+            return 0
+
     def list_dir(self, path: str = "/") -> List[VFSFile]:
         """Lista archivos en un directorio con caché TTL de 30s."""
         path = path.rstrip('/') or '/'
