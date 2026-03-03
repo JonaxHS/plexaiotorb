@@ -39,10 +39,10 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
                 # Mostrar primeros 10
                 log(f"[Watcher] Primeros 10 items: {root_items[:10]}", on_log)
                 
-                # Buscar items que contengan palabras clave del título
-                title_words = title.lower().split()[:2] if title else []
+                # Buscar items que contengan TODAS las palabras clave del título
+                title_words = [w for w in title.lower().split()[:3] if len(w) > 2] if title else []
                 if title_words:
-                    matching = [item for item in root_items if any(word in item.lower() for word in title_words)]
+                    matching = [item for item in root_items if all(word in item.lower() for word in title_words)]
                     if matching:
                         log(f"[Watcher] Items que coinciden con '{title}': {matching[:5]}", on_log)
         except PermissionError:
