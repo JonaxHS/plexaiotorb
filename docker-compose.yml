@@ -30,6 +30,8 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    env_file:
+      - .env
 
   torbox-media-center:
     image: ghcr.io/torbox-app/torbox-media-center:main
@@ -45,8 +47,9 @@ services:
       - SYS_ADMIN
     security_opt:
       - apparmor:unconfined
+    env_file:
+      - .env
     environment:
-      - TORBOX_API_KEY=${TORBOX_API_KEY:-placeholder}
       - MOUNT_METHOD=fuse
       - MOUNT_PATH=/mnt/torbox
       - RAW_MODE=true

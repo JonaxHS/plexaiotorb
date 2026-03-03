@@ -93,79 +93,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def _ensure_env_file_with_api_key():
+    """Asegura que existe .env con la API key correcta para docker-compose."""
+    try:
+        api_token = config_module.config.get("torbox", {}).get("api_token", "")
+        
+        # Ruta del archivo .env (en el directorio raíz del proyecto)
+        env_file = "/app/../.env"
+        
+        # Si no existe, lo creamos
+        # Si existe pero la API key está desactualizada, lo actualizamos
+        env_content = f"TORBOX_API_KEY={api_token}\n"
+        
+        try:
+            with open(env_file, 'w') as f:
+                f.write(env_content)
+            print(f"[Startup] ✓ Archivo .env actualizado con API key de config.yaml")
+            return True
+        except Exception as e:
+            print(f"[Startup] ⚠️ No se pudo escribir .env: {e}")
+            return False
+            
+    except Exception as e:
+        print(f"[Startup] ⚠️ Error en _ensure_env_file_with_api_key: {e}")
+        return False
+
 def _sync_torbox_media_center_api_key():
-    """Lee la API key de config.yaml e inyecta en torbox-media-center."""
+    """Verifica que torbox-media-center esté corriendo con API key correcta.
+    
+    NOTA: La inyección de API key debe hacerse via docker-compose.yml environment,
+    no intentamos recrear el contenedor aquí.
+    """
     try:
         api_token = config_module.config.get("torbox", {}).get("api_token", "")
         if not api_token:
-            print("[Startup] TORBOX_API_TOKEN vacío en config, torbox-media-center puede no funcionar")
+            print("[Startup] ⚠️ TORBOX_API_TOKEN vacío en config")
             return False
         
         client = docker.from_env()
         try:
             container = client.containers.get("torbox-media-center")
-            
-            # Obtener la configuración actual del contenedor
-            print("[Startup] Recreando torbox-media-center con API key actualizada...")
-            inspect_data = client.api.inspect_container(container.id)
-            
-            # Parar el contenedor
-            container.stop(timeout=5)
-            
-            # Removerlo
-            container.remove()
-            
-            # Recrearlo con la nueva env var
-            # Perservamos la mayoría de la configuración original
-            env_vars = inspect_data['Config'].get('Env', [])
-            # Remover cualquier TORBOX_API_KEY anterior
-            env_vars = [e for e in env_vars if not e.startswith('TORBOX_API_KEY=')]
-            # Añadir la nueva
-            env_vars.append(f"TORBOX_API_KEY={api_token}")
-            
-            image = inspect_data['Config']['Image']
-            volumes = inspect_data['Config'].get('Volumes', {})
-            host_config = inspect_data.get('HostConfig', {})
-            
-            # Recrear el contenedor
-            client.containers.create(
-                image,
-                name="torbox-media-center",
-                environment=env_vars,
-                volumes=list(volumes.keys()) if volumes else [],
-                devices=['/dev/fuse'],
-                cap_add=['SYS_ADMIN'],
-                security_opt=['apparmor=unconfined'],
-                stdin_open=True,
-                tty=True,
-                restart_policy={'Name': 'unless-stopped'},
-                host_config=client.api.create_host_config(
-                    binds={'torbox_data': {'bind': '/mnt/torbox', 'mode': 'rw'}},
-                    devices=['/dev/fuse'],
-                    cap_add=['SYS_ADMIN'],
-                    security_opt=['apparmor=unconfined']
-                )
-            )
-            
-            # Iniciar el contenedor
-            client.containers.get("torbox-media-center").start()
-            print("[Startup] ✓ torbox-media-center recreado con API key del config")
+            if container.status != "running":
+                print(f"[Startup] ⚠️ torbox-media-center no está corriendo (status: {container.status})")
+                print("[Startup] Intentando iniciar...")
+                container.start()
+            print("[Startup] ✓ torbox-media-center está corriendo")
             return True
-            
         except docker.errors.NotFound:
-            print("[Startup] ⚠️ torbox-media-center no está corriendo")
-            print("[Startup] Asegúrate de que docker-compose haya levantado todos los servicios")
+            print("[Startup] ⚠️ torbox-media-center no existe")
+            print("[Startup] Asegúrate de que docker-compose haya levantado los servicios correctamente")
             return False
     except Exception as e:
-        print(f"[Startup] ⚠️ Error sincronizando API key con torbox-media-center: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"[Startup] ⚠️ Error verificando torbox-media-center: {e}")
         return False
 
 @app.on_event("startup")
 async def on_startup():
     load_jobs()
     start_health_monitor(interval_seconds=3600, base_library_path=config.get("plex", {}).get("library_path", "/Media"))
+    
+    # Asegurar que .env tiene la API key correcta para docker-compose
+    _ensure_env_file_with_api_key()
     
     # Sincronizar API key de config a torbox-media-center
     _sync_torbox_media_center_api_key()
@@ -371,56 +359,14 @@ def update_settings(req: SettingsUpdate):
     TMDB_API_KEY = req.tmdb_api_key
     TORBOX_API_TOKEN = req.torbox_api_token
     
-    # Si cambió la API key, actualizar torbox-media-center
+    # Si cambió la API key, actualizar .env y notificar
     if req.torbox_api_token:
-        try:
-            client = docker.from_env()
-            container = client.containers.get("torbox-media-center")
-            print("[Settings] Recreando torbox-media-center con nueva API key...")
-            
-            # Obtener la configuración actual
-            inspect_data = client.api.inspect_container(container.id)
-            
-            # Parar y remover
-            container.stop(timeout=5)
-            container.remove()
-            
-            # Preparar env vars con la nueva key
-            env_vars = inspect_data['Config'].get('Env', [])
-            env_vars = [e for e in env_vars if not e.startswith('TORBOX_API_KEY=')]
-            env_vars.append(f"TORBOX_API_KEY={req.torbox_api_token}")
-            
-            image = inspect_data['Config']['Image']
-            volumes = inspect_data['Config'].get('Volumes', {})
-            
-            # Recrear
-            client.containers.create(
-                image,
-                name="torbox-media-center",
-                environment=env_vars,
-                volumes=list(volumes.keys()) if volumes else [],
-                devices=['/dev/fuse'],
-                cap_add=['SYS_ADMIN'],
-                security_opt=['apparmor=unconfined'],
-                stdin_open=True,
-                tty=True,
-                restart_policy={'Name': 'unless-stopped'},
-                host_config=client.api.create_host_config(
-                    binds={'torbox_data': {'bind': '/mnt/torbox', 'mode': 'rw'}},
-                    devices=['/dev/fuse'],
-                    cap_add=['SYS_ADMIN'],
-                    security_opt=['apparmor=unconfined']
-                )
-            )
-            
-            client.containers.get("torbox-media-center").start()
-            print("[Settings] ✓ torbox-media-center recreado con nueva API key")
-        except Exception as e:
-            print(f"[Settings] ⚠️ Error actualizando torbox-media-center: {e}")
-            import traceback
-            traceback.print_exc()
+        print("[Settings] ℹ️ API key de TorBox actualizada")
+        _ensure_env_file_with_api_key()
+        print("[Settings] ⚠️ NOTA: Requiere reiniciar los servicios para que torbox-media-center use la nueva key")
+        print("[Settings] Ejecuta: docker-compose down && docker-compose up -d")
     
-    return {"status": "ok", "message": "Ajustes almacenados en vivo"}
+    return {"status": "ok", "message": "Ajustes almacenados. Requiere reinicio de servicios para API key changes."}
 
 @app.get("/api/vfs/status")
 def vfs_status():
