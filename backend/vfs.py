@@ -199,11 +199,14 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
         import pyfuse3_asyncio
         pyfuse3_asyncio.enable()
         use_asyncio_bridge = True
-        logger.info("[VFS] pyfuse3_asyncio habilitado")
-    except ModuleNotFoundError:
-        logger.warning("[VFS] pyfuse3_asyncio no disponible; usando backend Trio")
+        logger.info("[VFS] pyfuse3_asyncio habilitado exitosamente")
+    except ModuleNotFoundError as e:
+        logger.warning(f"[VFS] pyfuse3_asyncio no disponible (ModuleNotFoundError): {e}. Usando backend Trio")
     except Exception as e:
-        logger.warning(f"[VFS] No se pudo activar pyfuse3_asyncio ({e}); usando backend Trio")
+        logger.error(f"[VFS] FALLO CRÍTICO al activar pyfuse3_asyncio: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        logger.warning("[VFS] Usando backend Trio como fallback (puede causar cuelgues con FastAPI)")
     
     vfs = TorBoxVFS(torbox_url, torbox_user, torbox_pass)
     
@@ -212,6 +215,11 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
         fuse_options = set(pyfuse3.default_options)
         fuse_options.add("fsname=torbox_vfs")
         fuse_options.add("allow_other")
+        
+        # Opcional: ajustar opciones en mac vs linux
+        import sys
+        if sys.platform != 'darwin':
+            fuse_options.add("nonempty")
 
         pyfuse3.init(vfs, mount_point, fuse_options)
         logger.info(f"[VFS] Mounted successfully at {mount_point}")
