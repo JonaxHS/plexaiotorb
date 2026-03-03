@@ -154,12 +154,10 @@ def _run_fuse_in_thread(torbox_url: str, torbox_user: str, torbox_pass: str, mou
     vfs = TorBoxVFS(torbox_url, torbox_user, torbox_pass)
     vfs.client.connect()
 
-    # Pre-carga no bloqueante: si hay rate-limit, continuamos sin frenar startup.
-    root_files = vfs.client.list_dir("/")
-    if root_files:
-        logger.info(f"[VFS] ✓ Raíz pre-cargada: {len(root_files)} items")
-    else:
-        logger.warning("[VFS] Raíz vacía o rate-limited, continuando sin pre-carga bloqueante")
+    # No hacer pre-carga en startup para evitar picos de WebDAV y 429.
+    # El contenido se resolverá on-demand a través de FUSE.
+    root_files = []
+    logger.info("[VFS] Inicio sin pre-carga WebDAV (modo on-demand)")
 
     fuse_options = set(pyfuse3.default_options)
     fuse_options.add("fsname=torbox_vfs")
@@ -188,7 +186,8 @@ def _run_fuse_in_thread(torbox_url: str, torbox_user: str, torbox_pass: str, mou
     async def fuse_main():
         async with trio.open_nursery() as nursery:
             nursery.start_soon(pyfuse3.main)
-            nursery.start_soon(background_subdir_warmup, vfs.client, root_files)
+            if root_files:
+                nursery.start_soon(background_subdir_warmup, vfs.client, root_files)
 
     try:
         pyfuse3.init(vfs, mount_point, fuse_options)
