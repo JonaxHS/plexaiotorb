@@ -9,6 +9,8 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 10s
     ports:
       - "8000:8000"
     volumes:
