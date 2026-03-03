@@ -1231,6 +1231,8 @@ def list_torbox_dir(path: str = "/"):
         return {"items": [], "error": "Ruta no encontrada"}
         
     items = []
+    is_root_level = safe_path == base
+    
     try:
         for entry in os.scandir(safe_path):
             # El VFS de TorBox muestra directorios fantasma con permisos d?????????
@@ -1239,9 +1241,9 @@ def list_torbox_dir(path: str = "/"):
                 stat_info = entry.stat()
                 is_dir = entry.is_dir()
                 
-                # Bug del VFS: archivos grandes reportados como directorios
-                # Si un "directorio" tiene más de 10MB, es realmente un archivo
-                if is_dir and stat_info.st_size > 10_000_000:  # > 10MB
+                # Bug del VFS: dentro de carpetas, archivos grandes son reportados como directorios
+                # Solo aplicar esta corrección en subdirectorios, no en el root
+                if not is_root_level and is_dir and stat_info.st_size > 10_000_000:  # > 10MB
                     is_dir = False
                 
                 items.append({
