@@ -154,28 +154,42 @@ def _run_fuse_in_thread(torbox_url: str, torbox_user: str, torbox_pass: str, mou
     vfs = TorBoxVFS(torbox_url, torbox_user, torbox_pass)
     vfs.client.connect()
 
-    # Pre-poblar la caché ANTES de que FUSE empiece a aceptar peticiones.
-    # Usa Depth:2 para obtener TODOS los directorios y archivos en UNA petición.
+    # Pre-poblar la caché raíz (Depth:1) antes de iniciar FUSE
     import time
-    for warmup_attempt in range(3):
-        logger.info(f"[VFS] Pre-cargando todos los directorios (Depth:2, intento {warmup_attempt+1}/3)...")
-        count = vfs.client.warm_up_all_dirs()
-        if count > 0:
-            logger.info(f"[VFS] ✓ Caché pre-cargada: {count} ítems raíz")
-            break
-        else:
-            wait = (warmup_attempt + 1) * 15  # 15s, 30s, 45s
-            logger.warning(f"[VFS] Pre-carga vacía o rate-limited, reintentando en {wait}s...")
-            time.sleep(wait)
+    root_files = vfs.client.list_dir("/")
+    if not root_files:
+        logger.warning("[VFS] Root vacío o rate-limited, esperando 15s y reintentando...")
+        time.sleep(15)
+        root_files = vfs.client.list_dir("/")
+    if root_files:
+        logger.info(f"[VFS] ✓ Raíz pre-cargada: {len(root_files)} items")
+    else:
+        logger.warning("[VFS] Raíz sigue vacía, continuando sin pre-carga")
 
     fuse_options = set(pyfuse3.default_options)
     fuse_options.add("fsname=torbox_vfs")
     fuse_options.add("allow_other")
 
+    async def background_subdir_warmup(client, root):
+        """Precarga subdirectorios en background dentro del loop de trio."""
+        dirs = [f for f in root if f.is_dir]
+        logger.info(f"[VFS] Background warmup: {len(dirs)} subdirectorios a precargar...")
+        for i, f in enumerate(dirs):
+            await trio.sleep(3)  # 3s entre requests para no rate-limit
+            await trio.to_thread.run_sync(client.list_dir, f.path)
+            if (i + 1) % 10 == 0:
+                logger.info(f"[VFS] Background warmup: {i+1}/{len(dirs)} directorios cacheados")
+        logger.info(f"[VFS] ✓ Background warmup completo: {len(dirs)} subdirectorios cacheados")
+
+    async def fuse_main():
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(pyfuse3.main)
+            nursery.start_soon(background_subdir_warmup, vfs.client, root_files)
+
     try:
         pyfuse3.init(vfs, mount_point, fuse_options)
         logger.info(f"[VFS] Mounted successfully at {mount_point}")
-        trio.run(pyfuse3.main)
+        trio.run(fuse_main)
     except Exception as e:
         logger.error(f"[VFS] FUSE thread error: {e}")
         raise
