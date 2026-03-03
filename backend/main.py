@@ -1233,11 +1233,22 @@ def list_torbox_dir(path: str = "/"):
     items = []
     try:
         for entry in os.scandir(safe_path):
-            items.append({
-                "name": entry.name,
-                "is_dir": entry.is_dir(),
-                "path": os.path.relpath(entry.path, base)
-            })
+            # El VFS de TorBox muestra directorios fantasma con permisos d?????????
+            # Filtrar elementos inaccesibles intentando hacer stat
+            try:
+                stat_info = entry.stat()
+                # Si podemos leer el stat, el archivo/directorio es accesible
+                items.append({
+                    "name": entry.name,
+                    "is_dir": entry.is_dir(),
+                    "path": os.path.relpath(entry.path, base),
+                    "size": stat_info.st_size
+                })
+            except (PermissionError, OSError) as stat_err:
+                # Elemento inaccesible (d?????????), ignorar
+                logger.debug(f"[VFS] Skipping inaccessible entry: {entry.name}")
+                continue
+                
     except Exception as e:
         logger.warning(f"[VFS] Error listing {safe_path}: {e}")
         return {"items": [], "error": str(e)}
