@@ -171,15 +171,24 @@ def _run_fuse_in_thread(torbox_url: str, torbox_user: str, torbox_pass: str, mou
     fuse_options.add("allow_other")
 
     async def background_subdir_warmup(client, root):
-        """Precarga subdirectorios en background dentro del loop de trio."""
+        """Precarga subdirectorios en background dentro del loop de trio (2 niveles)."""
         dirs = [f for f in root if f.is_dir]
-        logger.info(f"[VFS] Background warmup: {len(dirs)} subdirectorios a precargar...")
+        logger.info(f"[VFS] Background warmup: {len(dirs)} subdirectorios nivel 1...")
+        second_level_dirs = []
         for i, f in enumerate(dirs):
             await trio.sleep(3)  # 3s entre requests para no rate-limit
+            children = await trio.to_thread.run_sync(client.list_dir, f.path)
+            second_level_dirs.extend([c for c in children if c.is_dir])
+            if (i + 1) % 10 == 0:
+                logger.info(f"[VFS] Background warmup L1: {i+1}/{len(dirs)} cacheados")
+        logger.info(f"[VFS] Background warmup L1 completo. {len(second_level_dirs)} subdirs nivel 2 encontrados.")
+        # Cachear nivel 2 con mismo delay
+        for i, f in enumerate(second_level_dirs):
+            await trio.sleep(3)
             await trio.to_thread.run_sync(client.list_dir, f.path)
             if (i + 1) % 10 == 0:
-                logger.info(f"[VFS] Background warmup: {i+1}/{len(dirs)} directorios cacheados")
-        logger.info(f"[VFS] ✓ Background warmup completo: {len(dirs)} subdirectorios cacheados")
+                logger.info(f"[VFS] Background warmup L2: {i+1}/{len(second_level_dirs)} cacheados")
+        logger.info(f"[VFS] ✓ Background warmup completo (2 niveles)")
 
     async def fuse_main():
         async with trio.open_nursery() as nursery:

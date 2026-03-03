@@ -1237,7 +1237,9 @@ def list_torbox_dir(path: str = "/"):
                 "path": os.path.relpath(entry.path, base)
             })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning(f"[VFS] Error listing {safe_path}: {e}")
+        return {"items": [], "error": str(e)}
+
         
     # Ordenar: carpetas primero
     items.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
