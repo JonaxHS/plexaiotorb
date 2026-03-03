@@ -4,6 +4,7 @@ Usa `requests` en lugar de `aiohttp` para ser compatible con threads de trio/pyf
 """
 import requests
 import logging
+import time
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -133,6 +134,21 @@ class TorBoxWebDAVClient:
                 url = self.torbox_url + path
                 resp = self.session.request('PROPFIND', url, headers={'Depth': '1'}, timeout=15)
                 if resp.status_code == 429:
+                    retry_after = resp.headers.get('Retry-After')
+                    wait_seconds = 1.0
+                    if retry_after:
+                        try:
+                            wait_seconds = max(0.5, min(5.0, float(int(retry_after))))
+                        except Exception:
+                            wait_seconds = 1.0
+
+                    if attempt < 2:
+                        logger.warning(
+                            f"[VFSClient] Rate limited (429) listing {path}. Reintentando en {wait_seconds:.1f}s (attempt {attempt+1}/3)..."
+                        )
+                        time.sleep(wait_seconds)
+                        continue
+
                     logger.warning(f"[VFSClient] Rate limited (429) listing {path}. Usando caché stale.")
                     # Devolver caché aunque esté expirada — mejor que vacío
                     if path in self.dir_cache:
