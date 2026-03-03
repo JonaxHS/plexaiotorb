@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     stop_signal: SIGTERM
     stop_grace_period: 10s
+    depends_on:
+      - torbox-media-center
     ports:
       - "8000:8000"
     volumes:
@@ -29,9 +31,31 @@ services:
     environment:
       - TZ=UTC
       - CONFIG_PATH=/app/config/config.yaml
+      - MOUNT_POINT=/mnt/torbox
+      - VFS_PROVIDER=torbox-media-center
     dns:
       - 8.8.8.8
       - 1.1.1.1
+
+  torbox-media-center:
+    image: ghcr.io/torbox-app/torbox-media-center:main
+    container_name: torbox-media-center
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    volumes:
+      - torbox_data:/mnt/torbox
+    devices:
+      - /dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    environment:
+      - TORBOX_API_KEY=${TORBOX_API_KEY}
+      - MOUNT_METHOD=fuse
+      - MOUNT_PATH=/mnt/torbox
+      - RAW_MODE=true
 
   plex:
     image: lscr.io/linuxserver/plex:latest
@@ -58,6 +82,7 @@ services:
     restart: unless-stopped
     depends_on:
       - backend # Esperar a que exista el backend/symlink creator
+      - torbox-media-center
 
 volumes:
   torbox_data:

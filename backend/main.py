@@ -81,6 +81,20 @@ def is_vfs_fuse_mounted(mount_point: str = "/mnt/torbox") -> bool:
     except Exception:
         return False
 
+
+def get_vfs_provider() -> str:
+    provider = (
+        os.getenv("VFS_PROVIDER", "")
+        or config_module.config.get("vfs", {}).get("provider", "")
+        or "internal"
+    )
+    provider = str(provider).strip().lower()
+    if provider in ["external", "torbox_media_center", "torbox-media-center"]:
+        return "torbox-media-center"
+    if provider == "disabled":
+        return "disabled"
+    return "internal"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -97,8 +111,11 @@ async def on_startup():
     # Iniciar VFS custom
     from vfs_manager import startup_vfs
     vfs_started = await startup_vfs()
+    provider = get_vfs_provider()
     
-    if vfs_started:
+    if provider == "torbox-media-center":
+        print("[Startup] VFS externo activo: torbox-media-center")
+    elif vfs_started:
         # Esperar a que el VFS esté montado
         print("[Startup] Esperando a que VFS esté montado...")
         mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
@@ -192,6 +209,7 @@ def run_setup(req: SetupRequest):
         "plex": {"library_path": "/Media"},
         "torbox": {"api_token": req.torbox_api_token},
         "vfs": {
+            "provider": "torbox-media-center",
             "torbox_url": "https://webdav.torbox.app/",
             "torbox_user": req.torbox_email,
             "torbox_pass": req.torbox_password
@@ -230,6 +248,7 @@ def run_setup(req: SetupRequest):
         os.environ["TORBOX_URL"] = "https://webdav.torbox.app/"
         os.environ["TORBOX_USER"] = req.torbox_email
         os.environ["TORBOX_PASS"] = req.torbox_password
+        os.environ["VFS_PROVIDER"] = "torbox-media-center"
     except Exception as e:
         print(f"Error reiniciando contenedores: {e}")
 
@@ -245,6 +264,7 @@ def get_settings():
         "torbox_url": config_module.config.get("vfs", {}).get("torbox_url", ""),
         "torbox_user": config_module.config.get("vfs", {}).get("torbox_user", ""),
         "torbox_pass": config_module.config.get("vfs", {}).get("torbox_pass", ""),
+        "vfs_provider": config_module.config.get("vfs", {}).get("provider", "internal"),
         "torbox_api_token": config_module.config.get("torbox", {}).get("api_token", "")
     }
 
@@ -255,6 +275,7 @@ class SettingsUpdate(BaseModel):
     torbox_url: str = ""
     torbox_user: str = ""
     torbox_pass: str = ""
+    vfs_provider: str = "internal"
     torbox_api_token: str = ""
 
 @app.post("/api/settings")
@@ -276,6 +297,7 @@ def update_settings(req: SettingsUpdate):
     new_cfg["vfs"]["torbox_url"] = req.torbox_url
     new_cfg["vfs"]["torbox_user"] = req.torbox_user
     new_cfg["vfs"]["torbox_pass"] = req.torbox_pass
+    new_cfg["vfs"]["provider"] = (req.vfs_provider or "internal").strip().lower()
     
     # Guardar TorBox API Token
     if "torbox" not in new_cfg: new_cfg["torbox"] = {}
@@ -291,6 +313,7 @@ def update_settings(req: SettingsUpdate):
         os.environ["TORBOX_USER"] = req.torbox_user
     if req.torbox_pass:
         os.environ["TORBOX_PASS"] = req.torbox_pass
+    os.environ["VFS_PROVIDER"] = (req.vfs_provider or "internal").strip().lower()
     
     print(f"[VFS] Configuración TorBox actualizada")
     
@@ -305,14 +328,26 @@ def update_settings(req: SettingsUpdate):
 def vfs_status():
     try:
         mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
+        provider = get_vfs_provider()
 
         if not os.path.exists(mount_point):
             return {"status": "disconnected", "reason": "mount_path_missing"}
-        if not is_vfs_fuse_mounted(mount_point):
-            return {"status": "degraded", "reason": "vfs_not_mounted"}
+
+        if provider == "disabled":
+            return {"status": "disabled", "provider": provider}
+
+        if provider == "torbox-media-center":
+            try:
+                item_count = len(os.listdir(mount_point))
+                return {"status": "connected", "provider": provider, "items": item_count}
+            except Exception as e:
+                return {"status": "degraded", "provider": provider, "reason": str(e)}
+
+        if provider == "internal" and not is_vfs_fuse_mounted(mount_point):
+            return {"status": "degraded", "provider": provider, "reason": "vfs_not_mounted"}
 
         item_count = len(os.listdir(mount_point))
-        return {"status": "connected", "items": item_count}
+        return {"status": "connected", "provider": provider, "items": item_count}
     except Exception as e:
         return {"status": "disconnected", "reason": str(e)}
 

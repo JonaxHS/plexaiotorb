@@ -10,6 +10,15 @@ aiostreams:
 torbox:
   api_token: "TU_API_TOKEN_DE_TORBOX_AQUI"
 
+vfs:
+  # Opciones: internal | torbox-media-center | disabled
+  # Recomendado para este proyecto: torbox-media-center
+  provider: "torbox-media-center"
+  # Solo aplica si provider=internal
+  torbox_url: "https://webdav.torbox.app/"
+  torbox_user: "correo@ejemplo.com"
+  torbox_pass: "tu_password"
+
 plex:
   # Ruta raíz donde se crearán los symlinks (debe coincidir con la carpeta mapeada en docker-compose)
   library_path: "/Media"
