@@ -99,7 +99,11 @@ def _find_file_path_via_api(
     if not torrents:
         return None
 
-    expected_lower = expected_filename.lower().strip()
+    expected_clean = (expected_filename or "").strip().replace("\\", "/")
+    expected_basename = os.path.basename(expected_clean).strip().lower()
+    if not expected_basename:
+        log("[Watcher][API] Filename esperado vacío", on_log)
+        return None
 
     log(f"[Watcher][API] Torrents recibidos: {len(torrents)}", on_log)
 
@@ -112,13 +116,13 @@ def _find_file_path_via_api(
         files = torrent.get("files", []) or []
 
         for file in files:
-            file_name = (file.get("name") or "").strip()
-            basename = os.path.basename(file_name).lower()
-            if basename == expected_lower:
+            file_name = (file.get("name") or "").strip().replace("\\", "/")
+            basename = os.path.basename(file_name).strip().lower()
+            if basename == expected_basename:
                 matches.append((torrent_name, file_name))
 
     if not matches:
-        log(f"[Watcher][API] Sin coincidencia exacta para '{expected_filename}'", on_log)
+        log(f"[Watcher][API] Sin coincidencia exacta para '{expected_basename}'", on_log)
         return None
 
     log(f"[Watcher][API] Coincidencias exactas encontradas: {len(matches)}", on_log)
