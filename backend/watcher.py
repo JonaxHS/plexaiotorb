@@ -2,7 +2,9 @@ import re
 import os
 import time
 import threading
+import requests
 from typing import Optional
+import config as config_module
 
 def log(msg: str, on_log: Optional[callable] = None):
     """Escribe en stdout y en la cola de logs del frontend si está disponible."""
@@ -13,33 +15,146 @@ def log(msg: str, on_log: Optional[callable] = None):
         except Exception:
             pass
 
-def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", on_log: Optional[callable] = None, season: int = None, episode: int = None) -> Optional[str]:
-    """
-    Busca un archivo en TorBox usando BÚSQUEDA EXACTA ÚNICA del filename.
-    No intenta alternativas, solo busca exactamente lo que pide.
-    """
+
+def _get_torbox_api_token() -> str:
+    return (
+        config_module.config.get("torbox", {}).get("api_token", "")
+        or os.getenv("TORBOX_API_TOKEN", "")
+    )
+
+
+def _fetch_torbox_torrents(on_log: Optional[callable] = None) -> list:
+    token = _get_torbox_api_token()
+    if not token:
+        log("[Watcher][API] TorBox API token no configurado, usando fallback VFS", on_log)
+        return []
+
+    try:
+        resp = requests.get(
+            "https://api.torbox.app/v1/api/torrents/mylist",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log(f"[Watcher][API] Error HTTP {resp.status_code} consultando TorBox", on_log)
+            return []
+
+        data = resp.json()
+        torrents = data.get("data", [])
+        if not isinstance(torrents, list):
+            return []
+        return torrents
+    except Exception as e:
+        log(f"[Watcher][API] Error consultando TorBox: {e}", on_log)
+        return []
+
+
+def _resolve_vfs_path(mount_path: str, torrent_name: str, file_name: str) -> Optional[str]:
+    normalized_file_name = (file_name or "").lstrip("/").replace("\\", "/")
+    torrent_dir = os.path.join(mount_path, torrent_name)
+
+    file_rel = normalized_file_name
+    torrent_prefix = f"{torrent_name}/"
+    if file_rel.startswith(torrent_prefix):
+        file_rel = file_rel[len(torrent_prefix):]
+
+    basename = os.path.basename(file_rel)
+    candidate_paths = []
+    for candidate in [
+        os.path.join(torrent_dir, file_rel),
+        os.path.join(torrent_dir, basename),
+        os.path.join(mount_path, normalized_file_name),
+    ]:
+        norm = os.path.normpath(candidate)
+        if norm not in candidate_paths:
+            candidate_paths.append(norm)
+
+    for candidate in candidate_paths:
+        if os.path.exists(candidate):
+            return candidate
+
+    if os.path.isdir(torrent_dir):
+        for root, _, files in os.walk(torrent_dir):
+            if basename in files:
+                return os.path.join(root, basename)
+
+    return None
+
+
+def _find_file_path_via_api(
+    expected_filename: str,
+    title: str = "",
+    mount_path: str = "/mnt/torbox",
+    on_log: Optional[callable] = None,
+    season: int = None,
+    episode: int = None,
+) -> Optional[str]:
+    torrents = _fetch_torbox_torrents(on_log)
+    if not torrents:
+        return None
+
+    expected_lower = expected_filename.lower().strip()
+    title_words = [w for w in title.lower().split() if len(w) > 2][:3] if title else []
+
+    log(f"[Watcher][API] Torrents recibidos: {len(torrents)}", on_log)
+
+    matches = []
+    for torrent in torrents:
+        if not torrent.get("download_finished", True):
+            continue
+
+        torrent_name = torrent.get("name", "")
+        files = torrent.get("files", []) or []
+
+        if title_words and torrent_name:
+            if not all(word in torrent_name.lower() for word in title_words):
+                pass
+
+        for file in files:
+            file_name = (file.get("name") or "").strip()
+            basename = os.path.basename(file_name).lower()
+            if basename == expected_lower:
+                matches.append((torrent_name, file_name))
+
+    if not matches:
+        log(f"[Watcher][API] Sin coincidencia exacta para '{expected_filename}'", on_log)
+        return None
+
+    log(f"[Watcher][API] Coincidencias exactas encontradas: {len(matches)}", on_log)
+    for torrent_name, file_name in matches:
+        resolved = _resolve_vfs_path(mount_path, torrent_name, file_name)
+        if resolved:
+            log(f"[Watcher][API] ✓ ENCONTRADO: {resolved}", on_log)
+            return resolved
+
+    log("[Watcher][API] Coincidencias API detectadas, pero ninguna ruta existe aún en VFS", on_log)
+    return None
+
+
+def _find_file_path_via_vfs_walk(
+    expected_filename: str,
+    title: str = "",
+    mount_path: str = "/mnt/torbox",
+    on_log: Optional[callable] = None,
+    season: int = None,
+    episode: int = None,
+) -> Optional[str]:
     expected_lower = expected_filename.lower()
-    
-    # Verificar que el mount point existe
+
     if not os.path.exists(mount_path):
         log(f"[Watcher] 🔴 CRÍTICO: Mount point NO EXISTE: {mount_path}", on_log)
         log(f"[Watcher] 🔴 Verifica que el backend VFS esté levantado y /mnt/torbox montado", on_log)
         return None
 
     try:
-        # Listar raíz para diagnóstico
         try:
             root_items = os.listdir(mount_path)
             log(f"[Watcher] ✓ Mount activo. Items en {mount_path}: {len(root_items)} elementos", on_log)
-            
-            # Si hay pocos items, listarlos todos
+
             if len(root_items) < 20:
                 log(f"[Watcher] Contenido: {root_items}", on_log)
             else:
-                # Mostrar primeros 10
                 log(f"[Watcher] Primeros 10 items: {root_items[:10]}", on_log)
-                
-                # Buscar items que contengan TODAS las palabras clave del título
                 title_words = [w for w in title.lower().split()[:3] if len(w) > 2] if title else []
                 if title_words:
                     matching = [item for item in root_items if all(word in item.lower() for word in title_words)]
@@ -51,21 +166,35 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
         except Exception as e:
             log(f"[Watcher] 🔴 Error listando {mount_path}: {e}", on_log)
             return None
-        
-        # Búsqueda recursiva exhaustiva por el filename exacto
+
         found_count = 0
         for root, dirs, files in os.walk(mount_path):
             for f in files:
                 found_count += 1
                 if f.lower() == expected_lower:
                     full_path = os.path.join(root, f)
-                    log(f"[Watcher] ✓ ENCONTRADO: {full_path}", on_log)
+                    log(f"[Watcher] ✓ ENCONTRADO (VFS): {full_path}", on_log)
                     return full_path
-        
+
         log(f"[Watcher] Se exploraron {found_count} archivos, ninguno coincide con '{expected_filename}'", on_log)
-            
     except Exception as e:
-        log(f"[Watcher] 🔴 ERROR fatal en búsqueda: {e}", on_log)
+        log(f"[Watcher] 🔴 ERROR fatal en búsqueda VFS: {e}", on_log)
+
+    return None
+
+def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", on_log: Optional[callable] = None, season: int = None, episode: int = None) -> Optional[str]:
+    """
+    Busca un archivo en TorBox usando BÚSQUEDA EXACTA ÚNICA del filename.
+    No intenta alternativas, solo busca exactamente lo que pide.
+    """
+    found_api = _find_file_path_via_api(expected_filename, title, mount_path, on_log, season, episode)
+    if found_api:
+        return found_api
+
+    log("[Watcher] Fallback a búsqueda VFS local...", on_log)
+    found_vfs = _find_file_path_via_vfs_walk(expected_filename, title, mount_path, on_log, season, episode)
+    if found_vfs:
+        return found_vfs
 
     log(f"[Watcher] ARCHIVO NO ENCONTRADO: '{expected_filename}'", on_log)
     return None
