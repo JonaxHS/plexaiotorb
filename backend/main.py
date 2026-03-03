@@ -105,25 +105,61 @@ def _sync_torbox_media_center_api_key():
         try:
             container = client.containers.get("torbox-media-center")
             
-            # Actualizar la variable de entorno en el contenedor (persiste tras reinicio)
-            print("[Startup] Actualizando TORBOX_API_KEY en torbox-media-center...")
-            client.api.update_container(
-                container.id,
-                environment={"TORBOX_API_KEY": api_token}
+            # Obtener la configuración actual del contenedor
+            print("[Startup] Recreando torbox-media-center con API key actualizada...")
+            inspect_data = client.api.inspect_container(container.id)
+            
+            # Parar el contenedor
+            container.stop(timeout=5)
+            
+            # Removerlo
+            container.remove()
+            
+            # Recrearlo con la nueva env var
+            # Perservamos la mayoría de la configuración original
+            env_vars = inspect_data['Config'].get('Env', [])
+            # Remover cualquier TORBOX_API_KEY anterior
+            env_vars = [e for e in env_vars if not e.startswith('TORBOX_API_KEY=')]
+            # Añadir la nueva
+            env_vars.append(f"TORBOX_API_KEY={api_token}")
+            
+            image = inspect_data['Config']['Image']
+            volumes = inspect_data['Config'].get('Volumes', {})
+            host_config = inspect_data.get('HostConfig', {})
+            
+            # Recrear el contenedor
+            client.containers.create(
+                image,
+                name="torbox-media-center",
+                environment=env_vars,
+                volumes=list(volumes.keys()) if volumes else [],
+                devices=['/dev/fuse'],
+                cap_add=['SYS_ADMIN'],
+                security_opt=['apparmor=unconfined'],
+                stdin_open=True,
+                tty=True,
+                restart_policy={'Name': 'unless-stopped'},
+                host_config=client.api.create_host_config(
+                    binds={'torbox_data': {'bind': '/mnt/torbox', 'mode': 'rw'}},
+                    devices=['/dev/fuse'],
+                    cap_add=['SYS_ADMIN'],
+                    security_opt=['apparmor=unconfined']
+                )
             )
             
-            # Reiniciar para aplicar los cambios
-            print("[Startup] Reiniciando torbox-media-center con clave API actualizada...")
-            container.restart(timeout=10)
-            print("[Startup] ✓ torbox-media-center reiniciado con API key del config")
+            # Iniciar el contenedor
+            client.containers.get("torbox-media-center").start()
+            print("[Startup] ✓ torbox-media-center recreado con API key del config")
             return True
+            
         except docker.errors.NotFound:
             print("[Startup] ⚠️ torbox-media-center no está corriendo")
-            print("[Startup] El contenedor se iniciará con TORBOX_API_KEY=${TORBOX_API_KEY:-placeholder}")
-            print("[Startup] Asegúrate de que environment tenga el API key correcto en docker-compose.yml")
+            print("[Startup] Asegúrate de que docker-compose haya levantado todos los servicios")
             return False
     except Exception as e:
         print(f"[Startup] ⚠️ Error sincronizando API key con torbox-media-center: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 @app.on_event("startup")
@@ -340,16 +376,49 @@ def update_settings(req: SettingsUpdate):
         try:
             client = docker.from_env()
             container = client.containers.get("torbox-media-center")
-            print("[Settings] Actualizando API key en torbox-media-center...")
-            client.api.update_container(
-                container.id,
-                environment={"TORBOX_API_KEY": req.torbox_api_token}
+            print("[Settings] Recreando torbox-media-center con nueva API key...")
+            
+            # Obtener la configuración actual
+            inspect_data = client.api.inspect_container(container.id)
+            
+            # Parar y remover
+            container.stop(timeout=5)
+            container.remove()
+            
+            # Preparar env vars con la nueva key
+            env_vars = inspect_data['Config'].get('Env', [])
+            env_vars = [e for e in env_vars if not e.startswith('TORBOX_API_KEY=')]
+            env_vars.append(f"TORBOX_API_KEY={req.torbox_api_token}")
+            
+            image = inspect_data['Config']['Image']
+            volumes = inspect_data['Config'].get('Volumes', {})
+            
+            # Recrear
+            client.containers.create(
+                image,
+                name="torbox-media-center",
+                environment=env_vars,
+                volumes=list(volumes.keys()) if volumes else [],
+                devices=['/dev/fuse'],
+                cap_add=['SYS_ADMIN'],
+                security_opt=['apparmor=unconfined'],
+                stdin_open=True,
+                tty=True,
+                restart_policy={'Name': 'unless-stopped'},
+                host_config=client.api.create_host_config(
+                    binds={'torbox_data': {'bind': '/mnt/torbox', 'mode': 'rw'}},
+                    devices=['/dev/fuse'],
+                    cap_add=['SYS_ADMIN'],
+                    security_opt=['apparmor=unconfined']
+                )
             )
-            print("[Settings] Reiniciando torbox-media-center con nueva API key...")
-            container.restart(timeout=10)
-            print("[Settings] ✓ torbox-media-center actualizado y reiniciado")
+            
+            client.containers.get("torbox-media-center").start()
+            print("[Settings] ✓ torbox-media-center recreado con nueva API key")
         except Exception as e:
             print(f"[Settings] ⚠️ Error actualizando torbox-media-center: {e}")
+            import traceback
+            traceback.print_exc()
     
     return {"status": "ok", "message": "Ajustes almacenados en vivo"}
 
