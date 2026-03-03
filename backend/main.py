@@ -1233,14 +1233,16 @@ def list_torbox_dir(path: str = "/"):
     items = []
     is_root_level = safe_path == base
     
+    # Bug del VFS de TorBox: dentro de carpetas muestra todos los torrents como fantasmas
+    # En subdirectorios, el único archivo real tiene el mismo nombre que la carpeta padre
+    parent_name = os.path.basename(safe_path) if not is_root_level else None
+    
     try:
         for entry in os.scandir(safe_path):
-            # El VFS de TorBox muestra directorios fantasma con permisos d?????????
-            # Filtrar elementos inaccesibles intentando hacer stat
             try:
-                # Verificar que el archivo/directorio realmente existe
-                if not os.path.exists(entry.path):
-                    logger.debug(f"[VFS] Skipping non-existent entry: {entry.name}")
+                # En subdirectorios, solo mostrar el archivo que coincide con el nombre de la carpeta
+                if not is_root_level and parent_name and entry.name != parent_name:
+                    logger.debug(f"[VFS] Skipping ghost entry in subdir: {entry.name}")
                     continue
                 
                 stat_info = entry.stat()
@@ -1258,7 +1260,7 @@ def list_torbox_dir(path: str = "/"):
                     "size": stat_info.st_size
                 })
             except (PermissionError, OSError) as stat_err:
-                # Elemento inaccesible (d?????????), ignorar
+                # Elemento inaccesible, ignorar
                 logger.debug(f"[VFS] Skipping inaccessible entry: {entry.name}")
                 continue
                 
