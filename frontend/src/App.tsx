@@ -59,6 +59,7 @@ export default function App() {
         aiostreams_url: "http://localhost:XXXX",
         torbox_email: "",
         torbox_password: "",
+        torbox_api_token: "",
         plex_server_name: "PlexAioTorb"
     });
     const [setupStep, setSetupStep] = useState(1);
@@ -115,7 +116,8 @@ export default function App() {
         use_original_titles: false,
         torbox_url: '',
         torbox_user: '',
-        torbox_pass: ''
+        torbox_pass: '',
+        torbox_api_token: ''
     });
     const [settingsSaving, setSettingsSaving] = useState(false);
 
@@ -411,7 +413,8 @@ export default function App() {
                         use_original_titles: d.use_original_titles || false,
                         torbox_url: d.torbox_url || '',
                         torbox_user: d.torbox_user || '',
-                        torbox_pass: d.torbox_pass || ''
+                        torbox_pass: d.torbox_pass || '',
+                        torbox_api_token: d.torbox_api_token || ''
                     });
                 }).catch(e => console.error(e));
         }
@@ -1147,6 +1150,11 @@ export default function App() {
                                     <label className="block text-sm text-zinc-400 mb-1">TorBox Password</label>
                                     <input type="password" value={setupData.torbox_password} onChange={e => setSetupData({ ...setupData, torbox_password: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 focus:ring-2 focus:ring-amber-500/50 outline-none" />
                                 </div>
+                                <div>
+                                    <label className="block text-sm text-zinc-400 mb-1">TorBox API Token</label>
+                                    <input type="password" value={setupData.torbox_api_token} onChange={e => setSetupData({ ...setupData, torbox_api_token: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 focus:ring-2 focus:ring-amber-500/50 outline-none" placeholder="Obtén tu token en https://torbox.app/settings" />
+                                    <p className="text-xs text-zinc-600 mt-1">Se usa para listar archivos sin los bugs del VFS</p>
+                                </div>
                                 <div className="flex gap-4 mt-4">
                                     <button onClick={() => setSetupStep(1)} className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-lg transition-colors">Atrás</button>
                                     <button onClick={() => setSetupStep(3)} className="flex-1 py-3 bg-zinc-100 hover:bg-white text-zinc-900 font-bold rounded-lg transition-colors">Siguiente</button>
@@ -1711,6 +1719,18 @@ export default function App() {
                                                         placeholder="Contraseña segura"
                                                     />
                                                     <p className="text-[10px] text-zinc-500 font-medium">Se usa para conexión WebDAV al VFS custom</p>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">TorBox API Token</label>
+                                                    <input
+                                                        type="password"
+                                                        value={settingsForm.torbox_api_token}
+                                                        onChange={e => setSettingsForm({ ...settingsForm, torbox_api_token: e.target.value })}
+                                                        className="w-full bg-black/50 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50 transition-colors placeholder:text-zinc-700"
+                                                        placeholder="Obtén tu token en https://torbox.app/settings"
+                                                    />
+                                                    <p className="text-[10px] text-zinc-500 font-medium">Se usa para listar archivos sin los bugs del VFS</p>
                                                 </div>
                                             </div>
                                         </div>

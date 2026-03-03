@@ -248,7 +248,8 @@ def get_settings():
         "use_original_titles": config_module.config.get("plex", {}).get("use_original_titles", False),
         "torbox_url": config_module.config.get("vfs", {}).get("torbox_url", ""),
         "torbox_user": config_module.config.get("vfs", {}).get("torbox_user", ""),
-        "torbox_pass": config_module.config.get("vfs", {}).get("torbox_pass", "")
+        "torbox_pass": config_module.config.get("vfs", {}).get("torbox_pass", ""),
+        "torbox_api_token": config_module.config.get("torbox", {}).get("api_token", "")
     }
 
 class SettingsUpdate(BaseModel):
@@ -258,6 +259,7 @@ class SettingsUpdate(BaseModel):
     torbox_url: str = ""
     torbox_user: str = ""
     torbox_pass: str = ""
+    torbox_api_token: str = ""
 
 @app.post("/api/settings")
 def update_settings(req: SettingsUpdate):
@@ -279,6 +281,10 @@ def update_settings(req: SettingsUpdate):
     new_cfg["vfs"]["torbox_user"] = req.torbox_user
     new_cfg["vfs"]["torbox_pass"] = req.torbox_pass
     
+    # Guardar TorBox API Token
+    if "torbox" not in new_cfg: new_cfg["torbox"] = {}
+    new_cfg["torbox"]["api_token"] = req.torbox_api_token
+    
     save_config(new_cfg)
     print(f"[Settings] use_original_titles guardado en: {req.use_original_titles}")
     
@@ -293,8 +299,9 @@ def update_settings(req: SettingsUpdate):
     print(f"[VFS] Configuración TorBox actualizada")
     
     # Actualizar variables globales pre-cacheadas
-    global TMDB_API_KEY
+    global TMDB_API_KEY, TORBOX_API_TOKEN
     TMDB_API_KEY = req.tmdb_api_key
+    TORBOX_API_TOKEN = req.torbox_api_token
     
     return {"status": "ok", "message": "Ajustes almacenados en vivo"}
 
