@@ -10,12 +10,14 @@ import subprocess
 import time
 import asyncio
 import threading
+import logging
 from config import config, reload_config
 import config as config_module
 from watcher import start_watcher_thread
 from symlinks import create_plex_symlink
 from health import start_health_monitor
 
+logger = logging.getLogger(__name__)
 app = FastAPI(title="PlexAioTorb Backend")
 notification_queue = [] # Cola simple para avisos al frontend
 job_logs: dict = {}      # Logs detallados por trabajo: {job_id: [str]}
