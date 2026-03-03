@@ -26,13 +26,19 @@ def _get_torbox_api_token() -> str:
 def _fetch_torbox_torrents(on_log: Optional[callable] = None) -> list:
     token = _get_torbox_api_token()
     if not token:
-        log("[Watcher][API] TorBox API token no configurado, usando fallback VFS", on_log)
+        log("[Watcher][API] TorBox API token no configurado", on_log)
         return []
 
     try:
+        cache_buster = int(time.time() * 1000)
         resp = requests.get(
             "https://api.torbox.app/v1/api/torrents/mylist",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+            },
+            params={"_": cache_buster},
             timeout=15,
         )
         if resp.status_code != 200:
@@ -126,52 +132,6 @@ def _find_file_path_via_api(
     return None
 
 
-def _find_file_path_via_vfs_walk(
-    expected_filename: str,
-    title: str = "",
-    mount_path: str = "/mnt/torbox",
-    on_log: Optional[callable] = None,
-    season: int = None,
-    episode: int = None,
-) -> Optional[str]:
-    expected_lower = expected_filename.lower()
-
-    if not os.path.exists(mount_path):
-        log(f"[Watcher] 🔴 CRÍTICO: Mount point NO EXISTE: {mount_path}", on_log)
-        log(f"[Watcher] 🔴 Verifica que el backend VFS esté levantado y /mnt/torbox montado", on_log)
-        return None
-
-    try:
-        try:
-            root_items = os.listdir(mount_path)
-            log(f"[Watcher] ✓ Mount activo. Items en {mount_path}: {len(root_items)} elementos", on_log)
-
-            if len(root_items) < 20:
-                log(f"[Watcher] Contenido: {root_items}", on_log)
-            else:
-                log(f"[Watcher] Primeros 10 items: {root_items[:10]}", on_log)
-        except PermissionError:
-            log(f"[Watcher] 🔴 CRÍTICO: Permiso denegado en {mount_path}. Verifica permisos", on_log)
-            return None
-        except Exception as e:
-            log(f"[Watcher] 🔴 Error listando {mount_path}: {e}", on_log)
-            return None
-
-        found_count = 0
-        for root, dirs, files in os.walk(mount_path):
-            for f in files:
-                found_count += 1
-                if f.lower() == expected_lower:
-                    full_path = os.path.join(root, f)
-                    log(f"[Watcher] ✓ ENCONTRADO (VFS): {full_path}", on_log)
-                    return full_path
-
-        log(f"[Watcher] Se exploraron {found_count} archivos, ninguno coincide con '{expected_filename}'", on_log)
-    except Exception as e:
-        log(f"[Watcher] 🔴 ERROR fatal en búsqueda VFS: {e}", on_log)
-
-    return None
-
 def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", on_log: Optional[callable] = None, season: int = None, episode: int = None) -> Optional[str]:
     """
     Busca un archivo en TorBox usando BÚSQUEDA EXACTA ÚNICA del filename.
@@ -180,11 +140,6 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
     found_api = _find_file_path_via_api(expected_filename, title, mount_path, on_log, season, episode)
     if found_api:
         return found_api
-
-    log("[Watcher] Fallback a búsqueda VFS local...", on_log)
-    found_vfs = _find_file_path_via_vfs_walk(expected_filename, title, mount_path, on_log, season, episode)
-    if found_vfs:
-        return found_vfs
 
     log(f"[Watcher] ARCHIVO NO ENCONTRADO: '{expected_filename}'", on_log)
     return None
@@ -216,12 +171,8 @@ def watch_for_file(
     if on_status:
         on_status("Searching", msg)
 
-    # Esperar a que el VFS monte el archivo
-    log(f"[Watcher] Aguardando montaje en VFS...", on_log)
-    time.sleep(3)
-    
-    # Refresco inicial (no-op en VFS custom)
-    log(f"[Watcher] Refrescando estado de VFS...", on_log)
+    # Refresco inicial de búsqueda por API
+    log(f"[Watcher] Refrescando búsqueda por API...", on_log)
     cleanup_vfs_cache(on_log)
     
     cycle_count = 0
@@ -241,9 +192,8 @@ def watch_for_file(
         if on_status:
             on_status("Searching", f"Buscando '{expected_filename}'... ({elapsed}s)")
 
-        # Limpiar caché solo cada 60 ciclos (1 minuto) para evitar rate limiting
-        if cycle_count > 0 and cycle_count % 60 == 0:
-            cleanup_vfs_cache(on_log, aggressive=(cycle_count % 300 == 0))
+        # Limpieza lógica de caché antes de cada consulta API
+        cleanup_vfs_cache(on_log)
 
         found_path = find_file_path(expected_filename, title, mount_path, on_log, season, episode)
         if found_path:
@@ -258,12 +208,11 @@ def watch_for_file(
 
 def cleanup_vfs_cache(on_log: Optional[callable] = None, aggressive: bool = False):
     """
-    Compatibilidad heredada: en VFS custom no hay rc para limpiar caché externamente.
+    Compatibilidad heredada: usamos nombre histórico, pero ahora solo
+    señaliza refresco lógico para búsquedas por API.
     """
     if aggressive:
-        log(f"[Watcher] 🔄 Refresco agresivo solicitado (VFS TTL gestionado internamente)", on_log)
-    else:
-        log(f"[Watcher] ✓ Refresco solicitado (VFS custom)", on_log)
+        log(f"[Watcher][API] 🔄 Refresco agresivo solicitado", on_log)
 
 
 def start_watcher_thread(
