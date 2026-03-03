@@ -101,20 +101,26 @@ def _sync_torbox_media_center_api_key():
             print("[Startup] TORBOX_API_TOKEN vacío en config, torbox-media-center puede no funcionar")
             return False
         
-        # Establecer env var para que Docker pueda usarla
-        os.environ["TORBOX_API_KEY"] = api_token
-        
         client = docker.from_env()
         try:
             container = client.containers.get("torbox-media-center")
-            # Actualizar la env var del contenedor vivo (requiere reinicio)
-            print("[Startup] Reiniciando torbox-media-center con clave API de config.yaml...")
+            
+            # Actualizar la variable de entorno en el contenedor (persiste tras reinicio)
+            print("[Startup] Actualizando TORBOX_API_KEY en torbox-media-center...")
+            client.api.update_container(
+                container.id,
+                environment={"TORBOX_API_KEY": api_token}
+            )
+            
+            # Reiniciar para aplicar los cambios
+            print("[Startup] Reiniciando torbox-media-center con clave API actualizada...")
             container.restart(timeout=10)
             print("[Startup] ✓ torbox-media-center reiniciado con API key del config")
             return True
         except docker.errors.NotFound:
-            print("[Startup] ⚠️ torbox-media-center no está corriendo (lo haremos cuando se lance docker-compose)")
-            print("[Startup] Asegúrate de que el docker-compose tenga acceso a TORBOX_API_KEY")
+            print("[Startup] ⚠️ torbox-media-center no está corriendo")
+            print("[Startup] El contenedor se iniciará con TORBOX_API_KEY=${TORBOX_API_KEY:-placeholder}")
+            print("[Startup] Asegúrate de que environment tenga el API key correcto en docker-compose.yml")
             return False
     except Exception as e:
         print(f"[Startup] ⚠️ Error sincronizando API key con torbox-media-center: {e}")
@@ -329,16 +335,21 @@ def update_settings(req: SettingsUpdate):
     TMDB_API_KEY = req.tmdb_api_key
     TORBOX_API_TOKEN = req.torbox_api_token
     
-    # Si cambió la API key, reiniciar torbox-media-center
+    # Si cambió la API key, actualizar torbox-media-center
     if req.torbox_api_token:
         try:
             client = docker.from_env()
             container = client.containers.get("torbox-media-center")
+            print("[Settings] Actualizando API key en torbox-media-center...")
+            client.api.update_container(
+                container.id,
+                environment={"TORBOX_API_KEY": req.torbox_api_token}
+            )
             print("[Settings] Reiniciando torbox-media-center con nueva API key...")
             container.restart(timeout=10)
-            print("[Settings] ✓ torbox-media-center reiniciado")
+            print("[Settings] ✓ torbox-media-center actualizado y reiniciado")
         except Exception as e:
-            print(f"[Settings] ⚠️ Error reiniciando torbox-media-center: {e}")
+            print(f"[Settings] ⚠️ Error actualizando torbox-media-center: {e}")
     
     return {"status": "ok", "message": "Ajustes almacenados en vivo"}
 
