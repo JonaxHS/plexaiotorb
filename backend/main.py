@@ -104,12 +104,8 @@ async def on_startup():
         mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
         for attempt in range(30):  # 30 intentos x 1s = 30s max
             if is_vfs_fuse_mounted(mount_point):
-                try:
-                    item_count = len(os.listdir(mount_point))
-                    print(f"[Startup] ✓ VFS montado y listo ({item_count} items)")
-                    break
-                except:
-                    pass
+                print("[Startup] ✓ VFS montado y listo")
+                break
             print(f"[Startup] Esperando VFS... ({attempt}s)")
             await asyncio.sleep(1)
         else:
