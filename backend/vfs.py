@@ -190,7 +190,14 @@ class TorBoxVFS(pyfuse3.Operations):
         return self._make_attr(inode, is_dir, 0)
 
 async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, mount_point: str):
-    """Monta el VFS de TorBox usando un hilo separado para no bloquear FastAPI."""
+    """Monta el VFS de TorBox.
+    
+    pyfuse3.main() es una corrutina de Trio, no de asyncio.
+    La estrategia correcta es:
+      1. Inicializar el cliente WebDAV (aiohttp, asyncio) 
+      2. Llamar pyfuse3.init() (sincrónico, se puede desde asyncio)
+      3. Correr pyfuse3.main() dentro de trio.run() en un hilo separado
+    """
     logger.info(f"[VFS] Mounting TorBox at {mount_point}")
     
     vfs = TorBoxVFS(torbox_url, torbox_user, torbox_pass)
@@ -198,7 +205,7 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
     try:
         await vfs.startup()
         
-        # Opciones FUSE mínimas y compatibles (sin nonempty que no está disponible en FUSE3)
+        # Opciones FUSE mínimas y compatibles
         fuse_options = set(pyfuse3.default_options)
         fuse_options.add("fsname=torbox_vfs")
         fuse_options.add("allow_other")
@@ -206,9 +213,10 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
         pyfuse3.init(vfs, mount_point, fuse_options)
         logger.info(f"[VFS] Mounted successfully at {mount_point}")
         
-        # pyfuse3.main() es una corrutina — la ejecutamos directamente ya que
-        # mount_torbox_vfs corre como asyncio.Task separado (no bloquea FastAPI)
-        await pyfuse3.main()
+        # pyfuse3.main() es una corrutina de Trio — debe correr dentro de trio.run()
+        # Lo corremos en un hilo del threadpool para no bloquear el event loop de asyncio/FastAPI
+        import trio
+        await asyncio.to_thread(trio.run, pyfuse3.main)
         
     except asyncio.CancelledError:
         logger.info("[VFS] Mount task cancelled")
