@@ -82,7 +82,7 @@ def is_vfs_fuse_mounted(mount_point: str = "/mnt/torbox") -> bool:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -140,6 +140,7 @@ async def on_shutdown():
 
 TMDB_API_KEY = config.get("tmdb", {}).get("api_key", "")
 AIOSTREAMS_URL = config.get("aiostreams", {}).get("url", "")
+print(f"[Startup] Config Loaded. TMDB: {'✓' if TMDB_API_KEY else '✗'}, AIOStreams: {AIOSTREAMS_URL or '✗'}")
 
 class DownloadRequest(BaseModel):
     title: str
