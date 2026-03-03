@@ -94,7 +94,6 @@ def _find_file_path_via_api(
         return None
 
     expected_lower = expected_filename.lower().strip()
-    title_words = [w for w in title.lower().split() if len(w) > 2][:3] if title else []
 
     log(f"[Watcher][API] Torrents recibidos: {len(torrents)}", on_log)
 
@@ -105,10 +104,6 @@ def _find_file_path_via_api(
 
         torrent_name = torrent.get("name", "")
         files = torrent.get("files", []) or []
-
-        if title_words and torrent_name:
-            if not all(word in torrent_name.lower() for word in title_words):
-                pass
 
         for file in files:
             file_name = (file.get("name") or "").strip()
@@ -155,11 +150,6 @@ def _find_file_path_via_vfs_walk(
                 log(f"[Watcher] Contenido: {root_items}", on_log)
             else:
                 log(f"[Watcher] Primeros 10 items: {root_items[:10]}", on_log)
-                title_words = [w for w in title.lower().split()[:3] if len(w) > 2] if title else []
-                if title_words:
-                    matching = [item for item in root_items if all(word in item.lower() for word in title_words)]
-                    if matching:
-                        log(f"[Watcher] Items que coinciden con '{title}': {matching[:5]}", on_log)
         except PermissionError:
             log(f"[Watcher] 🔴 CRÍTICO: Permiso denegado en {mount_path}. Verifica permisos", on_log)
             return None
