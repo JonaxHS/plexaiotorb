@@ -82,14 +82,45 @@ def _resolve_vfs_path(mount_path: str, torrent_name: str, file_name: str) -> Opt
     except Exception:
         pass
 
+    # Helper function to safely check file existence using listdir (FUSE-friendly)
+    def file_exists_via_listdir(path: str) -> bool:
+        try:
+            parent = os.path.dirname(path)
+            name = os.path.basename(path)
+            if not parent or not name:
+                return False
+            try:
+                entries = os.listdir(parent)
+                return name in entries
+            except (OSError, IOError):
+                # Parent dir doesn't exist or isn't accessible
+                return False
+        except Exception:
+            return False
+    
+    # Check candidate paths using listdir-based check
     for candidate in candidate_paths:
-        if os.path.exists(candidate):
+        if file_exists_via_listdir(candidate):
             return candidate
 
-    if os.path.isdir(torrent_dir):
-        for root, _, files in os.walk(torrent_dir):
-            if basename in files:
-                return os.path.join(root, basename)
+    # Fallback: try to recursively find the basename in the torrent directory
+    try:
+        entries = os.listdir(torrent_dir)
+        for entry in entries:
+            entry_path = os.path.join(torrent_dir, entry)
+            if os.path.basename(entry_path) == basename:
+                return entry_path
+            
+            # If it's a directory, search inside recursively
+            try:
+                sub_entries = os.listdir(entry_path)
+                for sub_entry in sub_entries:
+                    if sub_entry == basename:
+                        return os.path.join(entry_path, sub_entry)
+            except (OSError, IOError):
+                pass
+    except (OSError, IOError):
+        pass
 
     return None
 
