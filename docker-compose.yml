@@ -17,7 +17,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - torbox_data:/mnt/torbox:rshared  # rshared propagates FUSE mounts from torbox-media-center
+      - ./torbox_data:/mnt/torbox:rshared  # Bind mount with FUSE propagation
       - ./app_config:/app/config:rw
       - ./plex_media:/Media:rw # Where we'll create the symlinks
       - ./plex_config:/plex_config:rw # To edit Preferences.xml
@@ -40,7 +40,7 @@ services:
     stdin_open: true
     tty: true
     volumes:
-      - torbox_data:/mnt/torbox
+      - ./torbox_data:/mnt/torbox:rshared  # Bind mount with FUSE propagation
     devices:
       - /dev/fuse
     cap_add:
@@ -66,7 +66,7 @@ services:
       - ./plex_config:/config
       - ./plex_media:/Media
       - ./plex_init.sh:/custom-cont-init.d/vfs_init.sh:ro
-      - torbox_data:/mnt/torbox:rw
+      - ./torbox_data:/mnt/torbox:rshared  # Bind mount with FUSE propagation
       - /dev/shm:/transcode
     ports:
       - "32400:32400"
@@ -74,6 +74,3 @@ services:
     depends_on:
       - backend # Esperar a que exista el backend/symlink creator
       - torbox-media-center
-
-volumes:
-  torbox_data:
