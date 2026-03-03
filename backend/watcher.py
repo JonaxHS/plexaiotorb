@@ -75,6 +75,13 @@ def _resolve_vfs_path(mount_path: str, torrent_name: str, file_name: str) -> Opt
         if norm not in candidate_paths:
             candidate_paths.append(norm)
 
+    # Force VFS cache refresh by listing root directory
+    # This ensures new torrent directories appear immediately
+    try:
+        os.listdir(mount_path)
+    except Exception:
+        pass
+
     for candidate in candidate_paths:
         if os.path.exists(candidate):
             return candidate
