@@ -206,9 +206,9 @@ async def mount_torbox_vfs(torbox_url: str, torbox_user: str, torbox_pass: str, 
         pyfuse3.init(vfs, mount_point, fuse_options)
         logger.info(f"[VFS] Mounted successfully at {mount_point}")
         
-        # Ejecutar el bucle de eventos FUSE en un hilo separado del threadpool
-        # para NO bloquear el event loop de asyncio/FastAPI
-        await asyncio.to_thread(pyfuse3.main)
+        # pyfuse3.main() es una corrutina — la ejecutamos directamente ya que
+        # mount_torbox_vfs corre como asyncio.Task separado (no bloquea FastAPI)
+        await pyfuse3.main()
         
     except asyncio.CancelledError:
         logger.info("[VFS] Mount task cancelled")
