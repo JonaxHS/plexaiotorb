@@ -154,6 +154,20 @@ def _run_fuse_in_thread(torbox_url: str, torbox_user: str, torbox_pass: str, mou
     vfs = TorBoxVFS(torbox_url, torbox_user, torbox_pass)
     vfs.client.connect()
 
+    # Pre-poblar la caché ANTES de que FUSE empiece a aceptar peticiones.
+    # Si TorBox está rate-limiting, reintentamos con backoff hasta 3 veces.
+    import time
+    for warmup_attempt in range(3):
+        logger.info(f"[VFS] Pre-cargando directorio raíz (intento {warmup_attempt+1}/3)...")
+        root_files = vfs.client.list_dir("/")
+        if root_files:
+            logger.info(f"[VFS] ✓ Caché pre-cargada: {len(root_files)} ítems en /")
+            break
+        else:
+            wait = (warmup_attempt + 1) * 15  # 15s, 30s, 45s
+            logger.warning(f"[VFS] Raíz vacía o rate-limited, reintentando en {wait}s...")
+            time.sleep(wait)
+
     fuse_options = set(pyfuse3.default_options)
     fuse_options.add("fsname=torbox_vfs")
     fuse_options.add("allow_other")
