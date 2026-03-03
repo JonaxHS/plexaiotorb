@@ -17,7 +17,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - torbox_data:/mnt/torbox:ro # Read-only to avoid modifying TorBox files
+      - torbox_data:/mnt/torbox:rshared  # rshared propagates FUSE mounts from torbox-media-center
       - ./app_config:/app/config:rw
       - ./plex_media:/Media:rw # Where we'll create the symlinks
       - ./plex_config:/plex_config:rw # To edit Preferences.xml
