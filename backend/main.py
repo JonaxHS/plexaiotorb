@@ -1231,28 +1231,21 @@ def list_torbox_dir(path: str = "/"):
         return {"items": [], "error": "Ruta no encontrada"}
         
     items = []
-    is_root_level = safe_path == base
     
     try:
         for entry in os.scandir(safe_path):
             try:
                 stat_info = entry.stat()
-                is_dir = entry.is_dir()
-                
-                # Bug del VFS: dentro de carpetas, archivos grandes son reportados como directorios
-                # Solo aplicar esta corrección en subdirectorios, no en el root
-                if not is_root_level and is_dir and stat_info.st_size > 10_000_000:  # > 10MB
-                    is_dir = False
                 
                 items.append({
                     "name": entry.name,
-                    "is_dir": is_dir,
+                    "is_dir": entry.is_dir(),
                     "path": os.path.relpath(entry.path, base),
                     "size": stat_info.st_size
                 })
             except (PermissionError, OSError, FileNotFoundError) as stat_err:
-                # Elemento inaccesible fantasma, ignorar
-                logger.debug(f"[VFS] Skipping inaccessible entry: {entry.name}")
+                # Elemento inaccesible, ignorar
+                logger.debug(f"[VFS] Skipping inaccessible: {entry.name}")
                 continue
                 
     except Exception as e:
