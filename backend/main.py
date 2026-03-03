@@ -1307,6 +1307,7 @@ def list_torbox_dir(path: str = "/"):
 def manual_link(req: ManualLinkRequest):
     """Vincula manualmente un archivo de TorBox a Plex"""
     base = "/mnt/torbox"
+    full_source_path = None
     
     # Si el path contiene torrent_id/file_id (formato API), convertir a ruta VFS
     if "/" in req.path.strip("/") and req.path.count("/") == 1:
@@ -1327,20 +1328,26 @@ def manual_link(req: ManualLinkRequest):
                     
                     if os.path.exists(vfs_path):
                         full_source_path = vfs_path
+                        logger.info(f"[ManualLink] Encontrado en VFS: {vfs_path}")
                     else:
+                        logger.error(f"[ManualLink] No encontrado en VFS: {vfs_path}")
                         raise HTTPException(status_code=404, detail=f"Archivo no encontrado en VFS: {vfs_path}")
                 else:
                     raise HTTPException(status_code=404, detail="Archivo no encontrado en el torrent")
             else:
                 raise HTTPException(status_code=404, detail="Torrent no encontrado")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Formato de path inválido")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"[ManualLink] Error procesando path API: {e}")
+            raise HTTPException(status_code=400, detail=f"Error procesando path: {str(e)}")
     else:
         # Path directo del VFS (legacy)
         full_source_path = os.path.join(base, req.path.lstrip("/"))
     
-    if not os.path.exists(full_source_path):
-        raise HTTPException(status_code=404, detail="Archivo fuente no encontrado")
+    if not full_source_path or not os.path.exists(full_source_path):
+        logger.error(f"[ManualLink] Archivo no existe: {full_source_path}")
+        raise HTTPException(status_code=404, detail=f"Archivo fuente no encontrado: {req.path}")
         
     use_original = config_module.config.get("plex", {}).get("use_original_titles", False)
 
