@@ -22,12 +22,6 @@ services:
       - ./plex_media:/Media:rw # Where we'll create the symlinks
       - ./plex_config:/plex_config:rw # To edit Preferences.xml
       - /var/run/docker.sock:/var/run/docker.sock
-    cap_add:
-      - SYS_ADMIN
-    devices:
-      - /dev/fuse
-    security_opt:
-      - apparmor:unconfined
     environment:
       - TZ=UTC
       - CONFIG_PATH=/app/config/config.yaml
@@ -71,12 +65,6 @@ services:
       - ./plex_init.sh:/custom-cont-init.d/vfs_init.sh:ro
       - torbox_data:/mnt/torbox:rw
       - /dev/shm:/transcode
-    cap_add:
-      - SYS_ADMIN
-    devices:
-      - /dev/fuse
-    security_opt:
-      - apparmor:unconfined
     ports:
       - "32400:32400"
     restart: unless-stopped

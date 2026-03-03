@@ -4,11 +4,8 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 
-# Instalar dependencias del sistema para fuse y pyfuse3
+# Dependencias de sistema mínimas para backend API
 RUN apt-get update && apt-get install -y \
-    libfuse3-dev \
-    pkg-config \
-    build-essential \
     procps \
     curl \
     tzdata \
@@ -16,8 +13,7 @@ RUN apt-get update && apt-get install -y \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt && \
-    python -c "import pyfuse3; print('pyfuse3 OK')"
+    pip install --no-cache-dir -r requirements.txt
 
 # We'll volume mount the code in dev for live reload, but copy the rest just in case
 COPY . .

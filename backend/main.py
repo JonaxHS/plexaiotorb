@@ -83,17 +83,7 @@ def is_vfs_fuse_mounted(mount_point: str = "/mnt/torbox") -> bool:
 
 
 def get_vfs_provider() -> str:
-    provider = (
-        os.getenv("VFS_PROVIDER", "")
-        or config_module.config.get("vfs", {}).get("provider", "")
-        or "internal"
-    )
-    provider = str(provider).strip().lower()
-    if provider in ["external", "torbox_media_center", "torbox-media-center"]:
-        return "torbox-media-center"
-    if provider == "disabled":
-        return "disabled"
-    return "internal"
+    return "torbox-media-center"
 
 app.add_middleware(
     CORSMiddleware,
@@ -111,24 +101,10 @@ async def on_startup():
     # Iniciar VFS custom
     from vfs_manager import startup_vfs
     vfs_started = await startup_vfs()
-    provider = get_vfs_provider()
-    
-    if provider == "torbox-media-center":
+    if vfs_started:
         print("[Startup] VFS externo activo: torbox-media-center")
-    elif vfs_started:
-        # Esperar a que el VFS esté montado
-        print("[Startup] Esperando a que VFS esté montado...")
-        mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
-        for attempt in range(30):  # 30 intentos x 1s = 30s max
-            if is_vfs_fuse_mounted(mount_point):
-                print("[Startup] ✓ VFS montado y listo")
-                break
-            print(f"[Startup] Esperando VFS... ({attempt}s)")
-            await asyncio.sleep(1)
-        else:
-            print("[Startup] ⚠️ VFS no se montó después de 30s. Continuando...")
     else:
-        print("[Startup] VFS deshabilitado o no disponible. Continuando sin mount FUSE.")
+        print("[Startup] No se pudo preparar el mount point externo. Continuando...")
     
     # Reanudar búsquedas pendientes
     pending_jobs = [job_id for job_id, job in active_jobs.items() 
@@ -264,7 +240,7 @@ def get_settings():
         "torbox_url": config_module.config.get("vfs", {}).get("torbox_url", ""),
         "torbox_user": config_module.config.get("vfs", {}).get("torbox_user", ""),
         "torbox_pass": config_module.config.get("vfs", {}).get("torbox_pass", ""),
-        "vfs_provider": config_module.config.get("vfs", {}).get("provider", "internal"),
+        "vfs_provider": "torbox-media-center",
         "torbox_api_token": config_module.config.get("torbox", {}).get("api_token", "")
     }
 
@@ -275,7 +251,7 @@ class SettingsUpdate(BaseModel):
     torbox_url: str = ""
     torbox_user: str = ""
     torbox_pass: str = ""
-    vfs_provider: str = "internal"
+    vfs_provider: str = "torbox-media-center"
     torbox_api_token: str = ""
 
 @app.post("/api/settings")
@@ -297,7 +273,7 @@ def update_settings(req: SettingsUpdate):
     new_cfg["vfs"]["torbox_url"] = req.torbox_url
     new_cfg["vfs"]["torbox_user"] = req.torbox_user
     new_cfg["vfs"]["torbox_pass"] = req.torbox_pass
-    new_cfg["vfs"]["provider"] = (req.vfs_provider or "internal").strip().lower()
+    new_cfg["vfs"]["provider"] = "torbox-media-center"
     
     # Guardar TorBox API Token
     if "torbox" not in new_cfg: new_cfg["torbox"] = {}
@@ -313,7 +289,7 @@ def update_settings(req: SettingsUpdate):
         os.environ["TORBOX_USER"] = req.torbox_user
     if req.torbox_pass:
         os.environ["TORBOX_PASS"] = req.torbox_pass
-    os.environ["VFS_PROVIDER"] = (req.vfs_provider or "internal").strip().lower()
+    os.environ["VFS_PROVIDER"] = "torbox-media-center"
     
     print(f"[VFS] Configuración TorBox actualizada")
     
@@ -333,21 +309,11 @@ def vfs_status():
         if not os.path.exists(mount_point):
             return {"status": "disconnected", "reason": "mount_path_missing"}
 
-        if provider == "disabled":
-            return {"status": "disabled", "provider": provider}
-
-        if provider == "torbox-media-center":
-            try:
-                item_count = len(os.listdir(mount_point))
-                return {"status": "connected", "provider": provider, "items": item_count}
-            except Exception as e:
-                return {"status": "degraded", "provider": provider, "reason": str(e)}
-
-        if provider == "internal" and not is_vfs_fuse_mounted(mount_point):
-            return {"status": "degraded", "provider": provider, "reason": "vfs_not_mounted"}
-
-        item_count = len(os.listdir(mount_point))
-        return {"status": "connected", "provider": provider, "items": item_count}
+        try:
+            item_count = len(os.listdir(mount_point))
+            return {"status": "connected", "provider": provider, "items": item_count}
+        except Exception as e:
+            return {"status": "degraded", "provider": provider, "reason": str(e)}
     except Exception as e:
         return {"status": "disconnected", "reason": str(e)}
 
@@ -1151,26 +1117,21 @@ def clear_entire_library():
 
 @app.post("/api/system/reset-vfs")
 async def reset_vfs():
-    """Reinicia el mount del VFS custom sin reiniciar el backend."""
+    """Reinicia el contenedor de torbox-media-center sin reiniciar el backend."""
     try:
-        from vfs_manager import shutdown_vfs, startup_vfs
+        client = docker.from_env()
+        container = client.containers.get("torbox-media-center")
 
-        print("[System] Iniciando reset de VFS...")
-        await shutdown_vfs()
-        await asyncio.sleep(1)
-        started = await startup_vfs()
-
-        if started:
-            print("[System] ✓ VFS reiniciado")
-            return {
-                "status": "ok",
-                "message": "VFS reiniciado correctamente"
-            }
+        print("[System] Reiniciando contenedor torbox-media-center...")
+        container.restart()
+        print("[System] ✓ torbox-media-center reiniciado")
 
         return {
-            "status": "warning",
-            "message": "VFS no pudo iniciarse (revisa credenciales/dependencias)"
+            "status": "ok",
+            "message": "torbox-media-center reiniciado correctamente"
         }
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Contenedor torbox-media-center no encontrado")
     except Exception as e:
         print(f"[System] ✗ Error en reset de VFS: {e}")
         raise HTTPException(status_code=500, detail=f"Error reseteando VFS: {str(e)}")
@@ -1203,22 +1164,16 @@ async def reset_all():
         print("[System] Iniciando reset completo del sistema...")
         results = []
         
-        # 1. Reset VFS
+        # 1. Reset torbox-media-center
         try:
-            from vfs_manager import shutdown_vfs, startup_vfs
-            await shutdown_vfs()
-            await asyncio.sleep(1)
-            started = await startup_vfs()
-
-            if started:
-                results.append("✓ VFS reiniciado")
-                print("[System] ✓ VFS reiniciado")
-            else:
-                results.append("⚠️ VFS no inició (revisar configuración)")
-                print("[System] ⚠️ VFS no inició")
+            client = docker.from_env()
+            container = client.containers.get("torbox-media-center")
+            container.restart()
+            results.append("✓ torbox-media-center reiniciado")
+            print("[System] ✓ torbox-media-center reiniciado")
         except Exception as e:
-            results.append(f"⚠️ Error VFS: {str(e)}")
-            print(f"[System] ⚠️ Error reseteando VFS: {e}")
+            results.append(f"⚠️ Error torbox-media-center: {str(e)}")
+            print(f"[System] ⚠️ Error reseteando torbox-media-center: {e}")
         
         # 2. Reset Plex
         try:
