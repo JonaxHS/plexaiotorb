@@ -142,7 +142,8 @@ async def on_shutdown():
 
 TMDB_API_KEY = config.get("tmdb", {}).get("api_key", "")
 AIOSTREAMS_URL = config.get("aiostreams", {}).get("url", "")
-print(f"[Startup] Config Loaded. TMDB: {'✓' if TMDB_API_KEY else '✗'}, AIOStreams: {AIOSTREAMS_URL or '✗'}")
+TORBOX_API_TOKEN = config.get("torbox", {}).get("api_token", "")
+print(f"[Startup] Config Loaded. TMDB: {'✓' if TMDB_API_KEY else '✗'}, AIOStreams: {AIOSTREAMS_URL or '✗'}, TorBox API: {'✓' if TORBOX_API_TOKEN else '✗'}")
 
 class DownloadRequest(BaseModel):
     title: str
@@ -163,6 +164,7 @@ class SetupRequest(BaseModel):
     aiostreams_url: str
     torbox_email: str
     torbox_password: str
+    torbox_api_token: str
     plex_server_name: str
 
 class ManualLinkRequest(BaseModel):
@@ -192,6 +194,7 @@ def run_setup(req: SetupRequest):
         "tmdb": {"api_key": req.tmdb_api_key},
         "aiostreams": {"url": req.aiostreams_url},
         "plex": {"library_path": "/Media"},
+        "torbox": {"api_token": req.torbox_api_token},
         "vfs": {
             "torbox_url": "https://webdav.torbox.app/",
             "torbox_user": req.torbox_email,
@@ -1218,50 +1221,116 @@ def api_check_cache(req: CacheCheckRequest):
     from watcher import check_file_exists
     path = check_file_exists(req.filename, req.title)
     return {"cached": path is not None, "path": path}
-@app.get("/api/torbox/list")
-def list_torbox_dir(path: str = "/"):
-    """Lista el contenido de una carpeta en el montaje de torbox"""
-    base = "/mnt/torbox"
-    # Evitar path traversal básico
-    safe_path = os.path.normpath(os.path.join(base, path.lstrip("/")))
-    if not safe_path.startswith(base):
-        raise HTTPException(status_code=403, detail="Acceso denegado")
-    
-    if not os.path.exists(safe_path):
-        return {"items": [], "error": "Ruta no encontrada"}
-        
-    items = []
+
+def get_torbox_torrents():
+    """Obtiene la lista de torrents de la API de TorBox"""
+    if not TORBOX_API_TOKEN:
+        return []
     
     try:
-        for entry in os.scandir(safe_path):
-            try:
-                stat_info = entry.stat()
-                
-                items.append({
-                    "name": entry.name,
-                    "is_dir": entry.is_dir(),
-                    "path": os.path.relpath(entry.path, base),
-                    "size": stat_info.st_size
-                })
-            except (PermissionError, OSError, FileNotFoundError) as stat_err:
-                # Elemento inaccesible, ignorar
-                logger.debug(f"[VFS] Skipping inaccessible: {entry.name}")
-                continue
-                
+        resp = requests.get(
+            "https://api.torbox.app/v1/api/torrents/mylist",
+            headers={"Authorization": f"Bearer {TORBOX_API_TOKEN}"},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("data", [])
+        else:
+            logger.error(f"[TorBox API] Error {resp.status_code}: {resp.text}")
+            return []
     except Exception as e:
-        logger.warning(f"[VFS] Error listing {safe_path}: {e}")
-        return {"items": [], "error": str(e)}
+        logger.error(f"[TorBox API] Exception: {e}")
+        return []
 
-        
-    # Ordenar: carpetas primero
-    items.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
-    return {"items": items}
+@app.get("/api/torbox/list")
+def list_torbox_dir(path: str = "/"):
+    """Lista torrents y archivos usando la API de TorBox"""
+    if not TORBOX_API_TOKEN:
+        return {"items": [], "error": "TorBox API token no configurado"}
+    
+    # Si estamos en el root, listar torrents
+    if path == "/" or path == "":
+        try:
+            torrents = get_torbox_torrents()
+            items = []
+            for torrent in torrents:
+                if torrent.get("download_finished", False):
+                    items.append({
+                        "name": torrent.get("name", "Unknown"),
+                        "is_dir": True,
+                        "path": str(torrent.get("id", "")),
+                        "size": torrent.get("size", 0),
+                        "torrent_id": torrent.get("id")
+                    })
+            items.sort(key=lambda x: x["name"].lower())
+            return {"items": items}
+        except Exception as e:
+            logger.error(f"[TorBox API] Error listing torrents: {e}")
+            return {"items": [], "error": str(e)}
+    
+    # Si path contiene un torrent_id, listar sus archivos
+    else:
+        try:
+            torrent_id = path.strip("/")
+            torrents = get_torbox_torrents()
+            torrent = next((t for t in torrents if str(t.get("id")) == torrent_id), None)
+            
+            if not torrent:
+                return {"items": [], "error": "Torrent no encontrado"}
+            
+            files = torrent.get("files", [])
+            items = []
+            for file in files:
+                items.append({
+                    "name": file.get("name", "Unknown"),
+                    "is_dir": False,
+                    "path": f"{torrent_id}/{file.get('id', '')}",
+                    "size": file.get("size", 0),
+                    "torrent_id": torrent_id,
+                    "file_id": file.get("id")
+                })
+            items.sort(key=lambda x: x["name"].lower())
+            return {"items": items}
+        except Exception as e:
+            logger.error(f"[TorBox API] Error listing files: {e}")
+            return {"items": [], "error": str(e)}
 
 @app.post("/api/library/manual-link")
 def manual_link(req: ManualLinkRequest):
     """Vincula manualmente un archivo de TorBox a Plex"""
     base = "/mnt/torbox"
-    full_source_path = os.path.join(base, req.path.lstrip("/"))
+    
+    # Si el path contiene torrent_id/file_id (formato API), convertir a ruta VFS
+    if "/" in req.path.strip("/") and req.path.count("/") == 1:
+        try:
+            torrent_id, file_id = req.path.strip("/").split("/")
+            torrents = get_torbox_torrents()
+            torrent = next((t for t in torrents if str(t.get("id")) == torrent_id), None)
+            
+            if torrent:
+                torrent_name = torrent.get("name", "")
+                file = next((f for f in torrent.get("files", []) if str(f.get("id")) == file_id), None)
+                
+                if file:
+                    file_name = file.get("name", "")
+                    # Buscar el archivo en el VFS
+                    # El VFS tiene la estructura: /mnt/torbox/TorrentName/FileName
+                    vfs_path = os.path.join(base, torrent_name, file_name)
+                    
+                    if os.path.exists(vfs_path):
+                        full_source_path = vfs_path
+                    else:
+                        raise HTTPException(status_code=404, detail=f"Archivo no encontrado en VFS: {vfs_path}")
+                else:
+                    raise HTTPException(status_code=404, detail="Archivo no encontrado en el torrent")
+            else:
+                raise HTTPException(status_code=404, detail="Torrent no encontrado")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato de path inválido")
+    else:
+        # Path directo del VFS (legacy)
+        full_source_path = os.path.join(base, req.path.lstrip("/"))
     
     if not os.path.exists(full_source_path):
         raise HTTPException(status_code=404, detail="Archivo fuente no encontrado")

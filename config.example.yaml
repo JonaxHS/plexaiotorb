@@ -7,6 +7,9 @@ tmdb:
 aiostreams:
   url: "http://url-de-tu-aiostreams:puerto"
 
+torbox:
+  api_token: "TU_API_TOKEN_DE_TORBOX_AQUI"
+
 plex:
   # Ruta raíz donde se crearán los symlinks (debe coincidir con la carpeta mapeada en docker-compose)
   library_path: "/Media"
