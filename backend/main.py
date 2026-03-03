@@ -1321,17 +1321,42 @@ def manual_link(req: ManualLinkRequest):
                 file = next((f for f in torrent.get("files", []) if str(f.get("id")) == file_id), None)
                 
                 if file:
-                    file_name = file.get("name", "")
-                    # Buscar el archivo en el VFS
-                    # El VFS tiene la estructura: /mnt/torbox/TorrentName/FileName
-                    vfs_path = os.path.join(base, torrent_name, file_name)
-                    
-                    if os.path.exists(vfs_path):
-                        full_source_path = vfs_path
-                        logger.info(f"[ManualLink] Encontrado en VFS: {vfs_path}")
+                    file_name = (file.get("name", "") or "").strip()
+                    normalized_file_name = file_name.lstrip("/").replace("\\", "/")
+                    torrent_dir = os.path.join(base, torrent_name)
+
+                    file_rel = normalized_file_name
+                    torrent_prefix = f"{torrent_name}/"
+                    if file_rel.startswith(torrent_prefix):
+                        file_rel = file_rel[len(torrent_prefix):]
+
+                    basename = os.path.basename(file_rel)
+                    candidate_paths = []
+                    for candidate in [
+                        os.path.join(torrent_dir, file_rel),
+                        os.path.join(torrent_dir, basename),
+                        os.path.join(base, normalized_file_name),
+                    ]:
+                        norm = os.path.normpath(candidate)
+                        if norm not in candidate_paths:
+                            candidate_paths.append(norm)
+
+                    for candidate in candidate_paths:
+                        if os.path.exists(candidate):
+                            full_source_path = candidate
+                            break
+
+                    if not full_source_path and os.path.isdir(torrent_dir):
+                        for root, _, files in os.walk(torrent_dir):
+                            if basename in files:
+                                full_source_path = os.path.join(root, basename)
+                                break
+
+                    if full_source_path:
+                        logger.info(f"[ManualLink] Encontrado en VFS: {full_source_path}")
                     else:
-                        logger.error(f"[ManualLink] No encontrado en VFS: {vfs_path}")
-                        raise HTTPException(status_code=404, detail=f"Archivo no encontrado en VFS: {vfs_path}")
+                        logger.error(f"[ManualLink] No encontrado en VFS. Intentados: {candidate_paths}")
+                        raise HTTPException(status_code=404, detail=f"Archivo no encontrado en VFS para torrent '{torrent_name}'")
                 else:
                     raise HTTPException(status_code=404, detail="Archivo no encontrado en el torrent")
             else:
