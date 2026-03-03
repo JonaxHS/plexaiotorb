@@ -46,7 +46,7 @@ services:
     security_opt:
       - apparmor:unconfined
     environment:
-      - TORBOX_API_KEY=${TORBOX_API_KEY}
+      - TORBOX_API_KEY=${TORBOX_API_KEY:-placeholder}
       - MOUNT_METHOD=fuse
       - MOUNT_PATH=/mnt/torbox
       - RAW_MODE=true
