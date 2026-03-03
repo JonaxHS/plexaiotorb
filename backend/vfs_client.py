@@ -35,7 +35,7 @@ class DirCache:
     """Cache de directorios con TTL"""
     files: List[VFSFile]
     timestamp: datetime
-    ttl_seconds: int = 30
+    ttl_seconds: int = 300  # 5 minutos (era 30s — causaba rate limiting 429)
 
     def is_expired(self) -> bool:
         return datetime.now() - self.timestamp > timedelta(seconds=self.ttl_seconds)
@@ -82,10 +82,18 @@ class TorBoxWebDAVClient:
             try:
                 url = self.torbox_url + path
                 resp = self.session.request('PROPFIND', url, headers={'Depth': '1'}, timeout=15)
+                if resp.status_code == 429:
+                    logger.warning(f"[VFSClient] Rate limited (429) listing {path}. Usando caché stale.")
+                    # Devolver caché aunque esté expirada — mejor que vacío
+                    if path in self.dir_cache:
+                        return self.dir_cache[path].files
+                    return []
                 if resp.status_code not in [207, 200]:
                     logger.error(f"[VFSClient] Error listing {path}: HTTP {resp.status_code}")
                     if attempt < 2:
                         continue
+                    if path in self.dir_cache:
+                        return self.dir_cache[path].files
                     return []
 
                 files = self._parse_propfind(resp.text, path)
@@ -94,14 +102,19 @@ class TorBoxWebDAVClient:
 
             except requests.exceptions.ConnectionError as e:
                 logger.warning(f"[VFSClient] Connection error (attempt {attempt+1}/3): {e}")
-                # Resetear la sesión para reconectar
                 self._session = None
                 if attempt == 2:
+                    if path in self.dir_cache:
+                        return self.dir_cache[path].files
                     return []
             except Exception as e:
                 logger.error(f"[VFSClient] Error listing {path}: {e}")
+                if path in self.dir_cache:
+                    return self.dir_cache[path].files
                 return []
 
+        if path in self.dir_cache:
+            return self.dir_cache[path].files
         return []
 
     def get_file_info(self, path: str) -> Optional[VFSFile]:
