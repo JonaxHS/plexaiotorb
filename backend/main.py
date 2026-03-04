@@ -1470,6 +1470,13 @@ def manual_link(req: ManualLinkRequest):
 
                     basename = os.path.basename(file_rel)
                     preferred_basename = os.path.basename(preferred_name).strip() if preferred_name else ""
+
+                    # Caso especial: algunos torrents llegan con nombre de archivo directo (ej: ...mp4)
+                    torrent_as_file = os.path.join(base, torrent_name)
+                    if _is_video_name(torrent_name) and _path_exists_via_listdir(torrent_as_file) and not _is_directory_via_listdir(torrent_as_file):
+                        full_source_path = torrent_as_file
+                        logger.info(f"[ManualLink] Torrent resuelto como archivo directo: {full_source_path}")
+
                     candidate_paths = []
                     for candidate in [
                         os.path.join(torrent_dir, file_rel),
@@ -1477,6 +1484,8 @@ def manual_link(req: ManualLinkRequest):
                         os.path.join(base, normalized_file_name),
                         os.path.join(torrent_dir, preferred_basename) if preferred_basename else None,
                         os.path.join(base, preferred_basename) if preferred_basename else None,
+                        os.path.join(base, basename),
+                        torrent_as_file,
                     ]:
                         if not candidate:
                             continue
