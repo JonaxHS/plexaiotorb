@@ -1576,7 +1576,7 @@ def manual_link(req: ManualLinkRequest):
 
                     # 2) Si no hay match exacto, buscar videos dentro del torrent seleccionado
                     if not full_source_path:
-                        videos = []
+                        file_candidates = []
                         scan_roots = [torrent_dir]
                         for extra_root in [
                             os.path.join(base, torrent_name_no_ext) if torrent_name_no_ext else None,
@@ -1606,21 +1606,25 @@ def manual_link(req: ManualLinkRequest):
                                     if depth < 5:
                                         stack.append((entry_path, depth + 1))
                                     continue
-                                if _is_video_name(entry):
-                                    videos.append(entry_path)
+                                if _is_video_name(entry) or _name_matches_target(entry, preferred_basename, basename):
+                                    file_candidates.append(entry_path)
 
                         preferred_lower = preferred_basename.lower() if preferred_basename else ""
                         basename_lower = basename.lower() if basename else ""
 
                         if preferred_lower:
-                            full_source_path = next((v for v in videos if os.path.basename(v).lower() == preferred_lower), None)
+                            full_source_path = next((v for v in file_candidates if os.path.basename(v).lower() == preferred_lower), None)
                         if not full_source_path and basename_lower:
-                            full_source_path = next((v for v in videos if os.path.basename(v).lower() == basename_lower), None)
-                        if not full_source_path and len(videos) == 1:
-                            full_source_path = videos[0]
+                            full_source_path = next((v for v in file_candidates if os.path.basename(v).lower() == basename_lower), None)
 
-                        if not full_source_path and len(videos) > 1:
-                            logger.error(f"[ManualLink] Ambiguo: múltiples videos en torrent y ninguno coincide exacto. videos={videos}")
+                        if not full_source_path:
+                            full_source_path = next((v for v in file_candidates if _name_matches_target(os.path.basename(v), preferred_basename, basename)), None)
+
+                        if not full_source_path and len(file_candidates) == 1:
+                            full_source_path = file_candidates[0]
+
+                        if not full_source_path and len(file_candidates) > 1:
+                            logger.error(f"[ManualLink] Ambiguo: múltiples archivos candidatos y ninguno coincide exacto. candidatos={file_candidates}")
                             raise HTTPException(status_code=409, detail="Múltiples archivos de video encontrados; selecciona el archivo exacto en TorBox Browser")
 
                     # 3) Fallback global exacto por basename (independiente del nombre de carpeta de torrent)
