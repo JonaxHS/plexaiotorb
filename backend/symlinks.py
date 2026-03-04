@@ -100,6 +100,13 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
         
         # Extraer la extensión del archivo original
         _, file_ext = os.path.splitext(source_file_path)
+        valid_video_exts = {
+            ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".flv",
+            ".webm", ".ts", ".m2ts", ".mpg", ".mpeg"
+        }
+        if file_ext.lower() not in valid_video_exts:
+            print(f"[Symlink] ⚠️ Extensión no válida detectada en origen ('{file_ext}'). Usando .mkv")
+            file_ext = ".mkv"
         
         # Crear el nombre del archivo según el formato de Plex
         if media_type == "movie":
