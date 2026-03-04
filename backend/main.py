@@ -1488,6 +1488,8 @@ def manual_link(req: ManualLinkRequest):
 
                     for candidate in candidate_paths:
                         if _path_exists_via_listdir(candidate):
+                            if _is_directory_via_listdir(candidate):
+                                continue
                             full_source_path = candidate
                             break
 

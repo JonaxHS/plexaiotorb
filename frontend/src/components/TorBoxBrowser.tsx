@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Folder, File, ChevronRight, ChevronLeft, Link as LinkIcon, X, Search } from 'lucide-react';
 
 interface TorBoxBrowserProps {
-    onSelect: (path: string) => void;
+    onSelect: (path: string, name?: string) => void;
     onClose: () => void;
     apiBase: string;
 }
@@ -123,7 +123,7 @@ export default function TorBoxBrowser({ onSelect, onClose, apiBase }: TorBoxBrow
 
                                     {!item.is_dir ? (
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); onSelect(item.path); }}
+                                            onClick={(e) => { e.stopPropagation(); onSelect(item.path, item.name); }}
                                             className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-lg text-xs flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100 shadow-xl"
                                         >
                                             <LinkIcon className="w-3.5 h-3.5" />
