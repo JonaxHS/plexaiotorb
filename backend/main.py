@@ -1643,30 +1643,48 @@ def manual_link(req: ManualLinkRequest):
                         logger.info(f"[ManualLink] Encontrado en VFS: {full_source_path}")
                     else:
                         # Debug: mostrar qué hay realmente en el mount
+                        fuzzy_match_file = None
                         try:
-                            mount_entries = os.listdir(base)[:20]  # Primeros 20
-                            logger.error(f"[ManualLink DEBUG] Entradas en {base}: {mount_entries}")
+                            mount_entries = os.listdir(base)
+                            logger.error(f"[ManualLink DEBUG] Entradas en {base}: {mount_entries[:20]}")
                             
-                            # Buscar coincidencias parciales
+                            # Buscar coincidencias parciales (fuzzy matching)
                             torrent_lower = torrent_name.lower()
                             matches = [e for e in mount_entries if torrent_lower in e.lower() or e.lower() in torrent_lower]
+                            
                             if matches:
                                 logger.error(f"[ManualLink DEBUG] Posibles coincidencias: {matches}")
-                                # Inspeccionar contenido del primer match
-                                first_match_path = os.path.join(base, matches[0])
-                                try:
+                                
+                                # Si hay un solo match y es un archivo, usarlo directamente
+                                if len(matches) == 1:
+                                    candidate_path = os.path.join(base, matches[0])
+                                    if not _is_directory_via_listdir(candidate_path):
+                                        fuzzy_match_file = candidate_path
+                                        logger.info(f"[ManualLink] Usando coincidencia fuzzy (archivo único): {fuzzy_match_file}")
+                                    else:
+                                        # Es directorio: buscar video dentro
+                                        inside = os.listdir(candidate_path)
+                                        logger.error(f"[ManualLink DEBUG] Dentro de '{matches[0]}': {inside}")
+                                        videos = [f for f in inside if _is_video_name(f)]
+                                        if videos:
+                                            fuzzy_match_file = os.path.join(candidate_path, videos[0])
+                                            logger.info(f"[ManualLink] Usando primer video en directorio fuzzy: {fuzzy_match_file}")
+                                else:
+                                    # Múltiples matches: inspeccionar primer
+                                    first_match_path = os.path.join(base, matches[0])
                                     if _is_directory_via_listdir(first_match_path):
                                         inside = os.listdir(first_match_path)
                                         logger.error(f"[ManualLink DEBUG] Dentro de '{matches[0]}': {inside}")
                                     else:
                                         logger.error(f"[ManualLink DEBUG] '{matches[0]}' es un archivo, no directorio")
-                                except Exception as e:
-                                    logger.error(f"[ManualLink DEBUG] Error inspeccionando '{matches[0]}': {e}")
                         except Exception as e:
                             logger.error(f"[ManualLink DEBUG] Error listando mount: {e}")
                         
-                        logger.error(f"[ManualLink] No encontrado en VFS. Intentados: {candidate_paths}")
-                        raise HTTPException(status_code=404, detail=f"Archivo no encontrado en VFS para torrent '{torrent_name}'")
+                        if fuzzy_match_file:
+                            full_source_path = fuzzy_match_file
+                        else:
+                            logger.error(f"[ManualLink] No encontrado en VFS. Intentados: {candidate_paths}")
+                            raise HTTPException(status_code=404, detail=f"Archivo no encontrado en VFS para torrent '{torrent_name}'")
                 else:
                     raise HTTPException(status_code=404, detail="Archivo no encontrado en el torrent")
             else:
