@@ -1364,6 +1364,7 @@ def manual_link(req: ManualLinkRequest):
     """Vincula manualmente un archivo de TorBox a Plex"""
     base = "/mnt/torbox"
     full_source_path = None
+    skip_exists_check = False  # Flag para TorBox FUSE lazy-loading
     
     logger.info(f"[ManualLink DEBUG] Request: path='{req.path}', filename='{req.filename}', tmdb_id={req.tmdb_id}, media_type={req.media_type}")
 
@@ -1718,6 +1719,9 @@ def manual_link(req: ManualLinkRequest):
                         
                         if fuzzy_match_file:
                             full_source_path = fuzzy_match_file
+                            # Marcar que vino de fuzzy match para skip validación exists() posterior
+                            # (TorBox FUSE muestra archivos en listdir pero exists() retorna False)
+                            skip_exists_check = True
                         else:
                             logger.error(f"[ManualLink] ✗ No encontrado. Rutas intentadas: {candidate_paths[:5]}")
                             raise HTTPException(status_code=404, detail=f"Archivo no encontrado en VFS para torrent '{torrent_name}'")
@@ -1734,9 +1738,16 @@ def manual_link(req: ManualLinkRequest):
         # Path directo del VFS (legacy)
         full_source_path = os.path.join(base, req.path.lstrip("/"))
     
-    if not full_source_path or not _path_exists_via_listdir(full_source_path) or _is_directory_via_listdir(full_source_path):
-        logger.error(f"[ManualLink] Archivo no existe: {full_source_path}")
-        raise HTTPException(status_code=404, detail=f"Archivo fuente no encontrado: {req.path}")
+    # Validar existencia (skip para TorBox FUSE que usa lazy loading)
+    if not skip_exists_check:
+        if not full_source_path or not _path_exists_via_listdir(full_source_path):
+            logger.error(f"[ManualLink] Archivo no existe: {full_source_path}")
+            raise HTTPException(status_code=404, detail=f"Archivo fuente no encontrado: {req.path}")
+        if _is_directory_via_listdir(full_source_path):
+            logger.error(f"[ManualLink] Path es directorio, no archivo: {full_source_path}")
+            raise HTTPException(status_code=400, detail=f"El path es un directorio, selecciona un archivo específico")
+    else:
+        logger.info(f"[ManualLink] ⚠️ Skipping exists check (TorBox FUSE lazy loading): {full_source_path}")
         
     use_original = config_module.config.get("plex", {}).get("use_original_titles", False)
 
