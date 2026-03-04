@@ -1440,6 +1440,34 @@ def manual_link(req: ManualLinkRequest):
 
         return fallback_videos[0] if fallback_videos else None
 
+    def _find_video_by_basename_global(root_dir: str, target_basenames: list[str], max_depth: int = 6) -> Optional[str]:
+        targets = {t.strip().lower() for t in target_basenames if t and t.strip()}
+        if not targets:
+            return None
+
+        stack = [(root_dir, 0)]
+        while stack:
+            current_dir, depth = stack.pop()
+            if depth > max_depth:
+                continue
+            try:
+                entries = os.listdir(current_dir)
+            except Exception:
+                continue
+
+            for entry in entries:
+                entry_path = os.path.join(current_dir, entry)
+                if _is_directory_via_listdir(entry_path):
+                    if depth < max_depth:
+                        stack.append((entry_path, depth + 1))
+                    continue
+
+                entry_lower = entry.lower()
+                if entry_lower in targets and _is_video_name(entry):
+                    return entry_path
+
+        return None
+
     def _tokenize_name(value: str) -> set:
         clean = re.sub(r"[^a-z0-9]+", " ", (value or "").lower())
         return {t for t in clean.split() if len(t) >= 3}
@@ -1572,6 +1600,16 @@ def manual_link(req: ManualLinkRequest):
                         if not full_source_path and len(videos) > 1:
                             logger.error(f"[ManualLink] Ambiguo: múltiples videos en torrent y ninguno coincide exacto. videos={videos}")
                             raise HTTPException(status_code=409, detail="Múltiples archivos de video encontrados; selecciona el archivo exacto en TorBox Browser")
+
+                    # 3) Fallback global exacto por basename (independiente del nombre de carpeta de torrent)
+                    if not full_source_path:
+                        full_source_path = _find_video_by_basename_global(
+                            base,
+                            [preferred_basename, basename],
+                            max_depth=6,
+                        )
+                        if full_source_path:
+                            logger.info(f"[ManualLink] Encontrado por búsqueda global exacta: {full_source_path}")
 
                     if full_source_path:
                         logger.info(f"[ManualLink] Encontrado en VFS: {full_source_path}")
