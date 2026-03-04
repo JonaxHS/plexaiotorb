@@ -1642,48 +1642,84 @@ def manual_link(req: ManualLinkRequest):
                     if full_source_path:
                         logger.info(f"[ManualLink] Encontrado en VFS: {full_source_path}")
                     else:
-                        # Debug: mostrar qué hay realmente en el mount
+                        # Fallback: fuzzy matching con lo que realmente existe en el mount
                         fuzzy_match_file = None
                         try:
                             mount_entries = os.listdir(base)
-                            logger.error(f"[ManualLink DEBUG] Entradas en {base}: {mount_entries[:20]}")
+                            logger.info(f"[ManualLink DEBUG] Total entradas en mount: {len(mount_entries)}")
+                            logger.info(f"[ManualLink DEBUG] Buscando coincidencia para torrent: '{torrent_name}'")
                             
-                            # Buscar coincidencias parciales (fuzzy matching)
+                            # Tokenizar nombre del torrent para matching más flexible
+                            torrent_tokens = _tokenize_name(torrent_name)
+                            preferred_tokens = _tokenize_name(preferred_basename) if preferred_basename else set()
+                            basename_tokens = _tokenize_name(basename) if basename else set()
+                            
+                            # Estrategia 1: substring exacto (case-insensitive)
                             torrent_lower = torrent_name.lower()
                             matches = [e for e in mount_entries if torrent_lower in e.lower() or e.lower() in torrent_lower]
                             
-                            if matches:
-                                logger.error(f"[ManualLink DEBUG] Posibles coincidencias: {matches}")
+                            # Estrategia 2: si no hay matches, buscar por tokens compartidos (>=60% overlap)
+                            if not matches and torrent_tokens:
+                                scored_matches = []
+                                for entry in mount_entries:
+                                    entry_tokens = _tokenize_name(entry)
+                                    if not entry_tokens:
+                                        continue
+                                    
+                                    # Calcular overlap con cada conjunto de tokens
+                                    overlaps = []
+                                    for token_set in [torrent_tokens, preferred_tokens, basename_tokens]:
+                                        if not token_set:
+                                            continue
+                                        shared = token_set & entry_tokens
+                                        overlap_pct = len(shared) / min(len(token_set), len(entry_tokens))
+                                        overlaps.append(overlap_pct)
+                                    
+                                    if overlaps and max(overlaps) >= 0.5:  # 50% overlap mínimo
+                                        scored_matches.append((entry, max(overlaps)))
                                 
-                                # Si hay un solo match y es un archivo, usarlo directamente
+                                # Ordenar por score descendente
+                                scored_matches.sort(key=lambda x: x[1], reverse=True)
+                                matches = [m[0] for m in scored_matches[:5]]  # Top 5
+                                if matches:
+                                    logger.info(f"[ManualLink DEBUG] Coincidencias por tokens (top5): {[(m, f'{s:.1%}') for m, s in scored_matches[:5]]}")
+                            
+                            if matches:
+                                logger.info(f"[ManualLink DEBUG] Coincidencias encontradas: {matches[:3]}")
+                                
+                                # Si hay un solo match y es un archivo, usarlo
                                 if len(matches) == 1:
                                     candidate_path = os.path.join(base, matches[0])
                                     if not _is_directory_via_listdir(candidate_path):
                                         fuzzy_match_file = candidate_path
-                                        logger.info(f"[ManualLink] Usando coincidencia fuzzy (archivo único): {fuzzy_match_file}")
+                                        logger.info(f"[ManualLink] ✓ Usando fuzzy match único: {matches[0]}")
                                     else:
-                                        # Es directorio: buscar video dentro
-                                        inside = os.listdir(candidate_path)
-                                        logger.error(f"[ManualLink DEBUG] Dentro de '{matches[0]}': {inside}")
-                                        videos = [f for f in inside if _is_video_name(f)]
-                                        if videos:
-                                            fuzzy_match_file = os.path.join(candidate_path, videos[0])
-                                            logger.info(f"[ManualLink] Usando primer video en directorio fuzzy: {fuzzy_match_file}")
-                                else:
-                                    # Múltiples matches: inspeccionar primer
-                                    first_match_path = os.path.join(base, matches[0])
-                                    if _is_directory_via_listdir(first_match_path):
-                                        inside = os.listdir(first_match_path)
-                                        logger.error(f"[ManualLink DEBUG] Dentro de '{matches[0]}': {inside}")
+                                        # Es directorio: buscar primer video dentro
+                                        try:
+                                            inside = os.listdir(candidate_path)[:50]
+                                            videos = [f for f in inside if _is_video_name(f) or not os.path.splitext(f)[1]]
+                                            if videos:
+                                                fuzzy_match_file = os.path.join(candidate_path, videos[0])
+                                                logger.info(f"[ManualLink] ✓ Usando primer archivo en directorio: {videos[0]}")
+                                        except:
+                                            pass
+                                elif len(matches) > 1:
+                                    # Múltiples: preferir archivos sobre directorios
+                                    files = [m for m in matches if not _is_directory_via_listdir(os.path.join(base, m))]
+                                    if len(files) == 1:
+                                        fuzzy_match_file = os.path.join(base, files[0])
+                                        logger.info(f"[ManualLink] ✓ Usando único archivo entre múltiples matches: {files[0]}")
                                     else:
-                                        logger.error(f"[ManualLink DEBUG] '{matches[0]}' es un archivo, no directorio")
+                                        logger.error(f"[ManualLink DEBUG] Múltiples coincidencias ambiguas: {matches[:3]}")
+                            else:
+                                logger.error(f"[ManualLink DEBUG] No hay coincidencias fuzzy. Primeras 20 entradas: {mount_entries[:20]}")
                         except Exception as e:
-                            logger.error(f"[ManualLink DEBUG] Error listando mount: {e}")
+                            logger.error(f"[ManualLink DEBUG] Error en fuzzy matching: {e}")
                         
                         if fuzzy_match_file:
                             full_source_path = fuzzy_match_file
                         else:
-                            logger.error(f"[ManualLink] No encontrado en VFS. Intentados: {candidate_paths}")
+                            logger.error(f"[ManualLink] ✗ No encontrado. Rutas intentadas: {candidate_paths[:5]}")
                             raise HTTPException(status_code=404, detail=f"Archivo no encontrado en VFS para torrent '{torrent_name}'")
                 else:
                     raise HTTPException(status_code=404, detail="Archivo no encontrado en el torrent")
