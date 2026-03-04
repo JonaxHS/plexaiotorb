@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     procps \
     curl \
     tzdata \
+    libfuse2 \
+    fuse3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
