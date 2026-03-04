@@ -1362,6 +1362,39 @@ def manual_link(req: ManualLinkRequest):
     """Vincula manualmente un archivo de TorBox a Plex"""
     base = "/mnt/torbox"
     full_source_path = None
+
+    def _path_exists_via_listdir(path: str) -> bool:
+        try:
+            parent = os.path.dirname(path)
+            name = os.path.basename(path)
+            if not parent or not name:
+                return False
+            return name in os.listdir(parent)
+        except Exception:
+            return False
+
+    def _find_basename_in_tree(root_dir: str, basename: str, max_depth: int = 3) -> Optional[str]:
+        stack = [(root_dir, 0)]
+        while stack:
+            current_dir, depth = stack.pop()
+            if depth > max_depth:
+                continue
+            try:
+                entries = os.listdir(current_dir)
+            except Exception:
+                continue
+
+            for entry in entries:
+                entry_path = os.path.join(current_dir, entry)
+                if entry == basename:
+                    return entry_path
+                if depth < max_depth:
+                    try:
+                        os.listdir(entry_path)
+                        stack.append((entry_path, depth + 1))
+                    except Exception:
+                        pass
+        return None
     
     # Si el path contiene torrent_id/file_id (formato API), convertir a ruta VFS
     if "/" in req.path.strip("/") and req.path.count("/") == 1:
@@ -1396,15 +1429,12 @@ def manual_link(req: ManualLinkRequest):
                             candidate_paths.append(norm)
 
                     for candidate in candidate_paths:
-                        if os.path.exists(candidate):
+                        if _path_exists_via_listdir(candidate):
                             full_source_path = candidate
                             break
 
-                    if not full_source_path and os.path.isdir(torrent_dir):
-                        for root, _, files in os.walk(torrent_dir):
-                            if basename in files:
-                                full_source_path = os.path.join(root, basename)
-                                break
+                    if not full_source_path:
+                        full_source_path = _find_basename_in_tree(torrent_dir, basename)
 
                     if full_source_path:
                         logger.info(f"[ManualLink] Encontrado en VFS: {full_source_path}")
@@ -1424,7 +1454,7 @@ def manual_link(req: ManualLinkRequest):
         # Path directo del VFS (legacy)
         full_source_path = os.path.join(base, req.path.lstrip("/"))
     
-    if not full_source_path or not os.path.exists(full_source_path):
+    if not full_source_path or not _path_exists_via_listdir(full_source_path):
         logger.error(f"[ManualLink] Archivo no existe: {full_source_path}")
         raise HTTPException(status_code=404, detail=f"Archivo fuente no encontrado: {req.path}")
         
