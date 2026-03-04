@@ -1460,6 +1460,7 @@ def manual_link(req: ManualLinkRequest):
                     preferred_name = (req.filename or "").strip()
                     if preferred_name:
                         logger.info(f"[ManualLink] Filename preferido desde AIOStreams: {preferred_name}")
+                    preferred_rel = preferred_name.lstrip("/").replace("\\", "/") if preferred_name else ""
                     normalized_file_name = file_name.lstrip("/").replace("\\", "/")
                     torrent_dir = os.path.join(base, torrent_name)
 
@@ -1482,6 +1483,7 @@ def manual_link(req: ManualLinkRequest):
 
                     candidate_paths = []
                     for candidate in [
+                        os.path.join(base, preferred_rel) if preferred_rel else None,
                         os.path.join(torrent_dir, file_rel),
                         os.path.join(torrent_dir, basename),
                         os.path.join(base, normalized_file_name),
