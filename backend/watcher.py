@@ -65,11 +65,18 @@ def _resolve_vfs_path(mount_path: str, torrent_name: str, file_name: str) -> Opt
         file_rel = file_rel[len(torrent_prefix):]
 
     basename = os.path.basename(file_rel)
+
+    def _tokenize_name(value: str) -> set:
+        clean = re.sub(r"[^a-z0-9]+", " ", (value or "").lower())
+        return {t for t in clean.split() if len(t) >= 3}
+
     candidate_paths = []
     for candidate in [
         os.path.join(torrent_dir, file_rel),
         os.path.join(torrent_dir, basename),
         os.path.join(mount_path, normalized_file_name),
+        os.path.join(mount_path, torrent_name),
+        os.path.join(mount_path, basename),
     ]:
         norm = os.path.normpath(candidate)
         if norm not in candidate_paths:
@@ -119,6 +126,27 @@ def _resolve_vfs_path(mount_path: str, torrent_name: str, file_name: str) -> Opt
                         return os.path.join(entry_path, sub_entry)
             except (OSError, IOError):
                 pass
+    except (OSError, IOError):
+        pass
+
+    # Fallback final: buscar entrada raíz con nombre aproximado
+    try:
+        root_entries = os.listdir(mount_path)
+        expected_tokens = _tokenize_name(basename)
+        best_entry = None
+        best_score = 0.0
+        for entry in root_entries:
+            entry_tokens = _tokenize_name(entry)
+            if not entry_tokens or not expected_tokens:
+                continue
+            overlap = len(entry_tokens & expected_tokens)
+            score = overlap / max(1, len(expected_tokens))
+            if score > best_score:
+                best_score = score
+                best_entry = entry
+
+        if best_entry and best_score >= 0.45:
+            return os.path.join(mount_path, best_entry)
     except (OSError, IOError):
         pass
 

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import requests
 import yaml
 import os
+import re
 import docker
 import subprocess
 import time
@@ -1395,6 +1396,10 @@ def manual_link(req: ManualLinkRequest):
                     except Exception:
                         pass
         return None
+
+    def _tokenize_name(value: str) -> set:
+        clean = re.sub(r"[^a-z0-9]+", " ", (value or "").lower())
+        return {t for t in clean.split() if len(t) >= 3}
     
     # Si el path contiene torrent_id/file_id (formato API), convertir a ruta VFS
     if "/" in req.path.strip("/") and req.path.count("/") == 1:
@@ -1423,6 +1428,8 @@ def manual_link(req: ManualLinkRequest):
                         os.path.join(torrent_dir, file_rel),
                         os.path.join(torrent_dir, basename),
                         os.path.join(base, normalized_file_name),
+                        os.path.join(base, torrent_name),
+                        os.path.join(base, basename),
                     ]:
                         norm = os.path.normpath(candidate)
                         if norm not in candidate_paths:
@@ -1435,6 +1442,31 @@ def manual_link(req: ManualLinkRequest):
 
                     if not full_source_path:
                         full_source_path = _find_basename_in_tree(torrent_dir, basename)
+
+                    if not full_source_path:
+                        try:
+                            root_entries = os.listdir(base)
+                            expected_tokens = _tokenize_name(basename)
+                            best_entry = None
+                            best_score = 0.0
+
+                            for entry in root_entries:
+                                entry_tokens = _tokenize_name(entry)
+                                if not entry_tokens or not expected_tokens:
+                                    continue
+                                overlap = len(entry_tokens & expected_tokens)
+                                score = overlap / max(1, len(expected_tokens))
+                                if score > best_score:
+                                    best_score = score
+                                    best_entry = entry
+
+                            if best_entry and best_score >= 0.45:
+                                root_candidate = os.path.join(base, best_entry)
+                                deep_match = _find_basename_in_tree(root_candidate, basename, max_depth=4)
+                                full_source_path = deep_match or root_candidate
+                                logger.info(f"[ManualLink] Fallback por nombre aproximado: '{best_entry}' (score={best_score:.2f})")
+                        except Exception:
+                            pass
 
                     if full_source_path:
                         logger.info(f"[ManualLink] Encontrado en VFS: {full_source_path}")
