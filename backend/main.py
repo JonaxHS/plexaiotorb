@@ -1470,6 +1470,9 @@ def manual_link(req: ManualLinkRequest):
 
                     basename = os.path.basename(file_rel)
                     preferred_basename = os.path.basename(preferred_name).strip() if preferred_name else ""
+                    torrent_name_no_ext = os.path.splitext(torrent_name)[0] if torrent_name else ""
+                    preferred_no_ext = os.path.splitext(preferred_basename)[0] if preferred_basename else ""
+                    basename_no_ext = os.path.splitext(basename)[0] if basename else ""
 
                     # Caso especial: algunos torrents llegan con nombre de archivo directo (ej: ...mp4)
                     torrent_as_file = os.path.join(base, torrent_name)
@@ -1486,6 +1489,9 @@ def manual_link(req: ManualLinkRequest):
                         os.path.join(base, preferred_basename) if preferred_basename else None,
                         os.path.join(base, basename),
                         torrent_as_file,
+                        os.path.join(base, torrent_name_no_ext) if torrent_name_no_ext else None,
+                        os.path.join(base, preferred_no_ext) if preferred_no_ext else None,
+                        os.path.join(base, basename_no_ext) if basename_no_ext else None,
                     ]:
                         if not candidate:
                             continue
@@ -1500,10 +1506,39 @@ def manual_link(req: ManualLinkRequest):
                                 full_source_path = candidate
                                 break
 
+                    # 1.1) Retry corto: el mount FUSE puede tardar en reflejar entradas API
+                    if not full_source_path:
+                        for _ in range(8):
+                            try:
+                                os.listdir(base)
+                            except Exception:
+                                pass
+                            time.sleep(1)
+                            for candidate in candidate_paths:
+                                if _path_exists_via_listdir(candidate) and not _is_directory_via_listdir(candidate):
+                                    if _is_video_name(os.path.basename(candidate)):
+                                        full_source_path = candidate
+                                        break
+                            if full_source_path:
+                                break
+
                     # 2) Si no hay match exacto, buscar videos dentro del torrent seleccionado
-                    if not full_source_path and _is_directory_via_listdir(torrent_dir):
+                    if not full_source_path:
                         videos = []
-                        stack = [(torrent_dir, 0)]
+                        scan_roots = [torrent_dir]
+                        for extra_root in [
+                            os.path.join(base, torrent_name_no_ext) if torrent_name_no_ext else None,
+                            os.path.join(base, preferred_no_ext) if preferred_no_ext else None,
+                            os.path.join(base, basename_no_ext) if basename_no_ext else None,
+                        ]:
+                            if extra_root and extra_root not in scan_roots:
+                                scan_roots.append(extra_root)
+
+                        stack = []
+                        for root in scan_roots:
+                            if _is_directory_via_listdir(root):
+                                stack.append((root, 0))
+
                         while stack:
                             current_dir, depth = stack.pop()
                             if depth > 5:
