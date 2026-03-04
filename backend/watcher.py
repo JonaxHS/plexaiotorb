@@ -6,6 +6,10 @@ import requests
 from typing import Optional
 import config as config_module
 
+
+def _default_mount_path() -> str:
+    return os.getenv("MOUNT_POINT") or os.getenv("VFS_MOUNT") or "/mnt/torbox"
+
 def log(msg: str, on_log: Optional[callable] = None):
     """Escribe en stdout y en la cola de logs del frontend si está disponible."""
     print(msg, flush=True)
@@ -156,11 +160,12 @@ def _resolve_vfs_path(mount_path: str, torrent_name: str, file_name: str) -> Opt
 def _find_file_path_via_api(
     expected_filename: str,
     title: str = "",
-    mount_path: str = "/mnt/torbox",
+    mount_path: str = None,
     on_log: Optional[callable] = None,
     season: int = None,
     episode: int = None,
 ) -> Optional[str]:
+    mount_path = mount_path or _default_mount_path()
     torrents = _fetch_torbox_torrents(on_log)
     if not torrents:
         return None
@@ -202,11 +207,12 @@ def _find_file_path_via_api(
     return None
 
 
-def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", on_log: Optional[callable] = None, season: int = None, episode: int = None) -> Optional[str]:
+def find_file_path(expected_filename: str, title: str = "", mount_path: str = None, on_log: Optional[callable] = None, season: int = None, episode: int = None) -> Optional[str]:
     """
     Busca un archivo en TorBox usando BÚSQUEDA EXACTA ÚNICA del filename.
     No intenta alternativas, solo busca exactamente lo que pide.
     """
+    mount_path = mount_path or _default_mount_path()
     found_api = _find_file_path_via_api(expected_filename, title, mount_path, on_log, season, episode)
     if found_api:
         return found_api
@@ -214,7 +220,7 @@ def find_file_path(expected_filename: str, title: str = "", mount_path: str = "/
     log(f"[Watcher] ARCHIVO NO ENCONTRADO: '{expected_filename}'", on_log)
     return None
 
-def check_file_exists(expected_filename: str, title: str = "", mount_path: str = "/mnt/torbox", season: int = None, episode: int = None) -> Optional[str]:
+def check_file_exists(expected_filename: str, title: str = "", mount_path: str = None, season: int = None, episode: int = None) -> Optional[str]:
     """Versión sincrónica de una sola pasada para checking rápido."""
     return find_file_path(expected_filename, title, mount_path, season=season, episode=episode)
 
@@ -224,7 +230,7 @@ def watch_for_file(
     year: str = "",
     season: int = None,
     episode: int = None,
-    mount_path: str = "/mnt/torbox",
+    mount_path: str = None,
     timeout_seconds: int = 7200,  # 2 horas por defecto (era 1 hora)
     on_status: Optional[callable] = None,
     get_status: Optional[callable] = None,
@@ -235,6 +241,7 @@ def watch_for_file(
     Busca un archivo en TorBox por filename exacto.
     Fuerza refresco de estado del watcher por ciclo sin usar comandos externos.
     """
+    mount_path = mount_path or _default_mount_path()
     start_time = time.time()
     msg = f"Buscando archivo: '{expected_filename}'"
     log(f"[Watcher] {msg}", on_log)

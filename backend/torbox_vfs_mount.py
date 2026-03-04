@@ -7,6 +7,7 @@ with intelligent caching and lazy loading.
 import os
 import sys
 import time
+import argparse
 import logging
 import threading
 import shutil
@@ -334,8 +335,14 @@ def main(torbox_mount: str, vfs_mount: str, cache_dir: str):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="TorBox custom VFS mount")
+    parser.add_argument("--mount-source", default=os.getenv("MOUNT_POINT", "/mnt/torbox"))
+    parser.add_argument("--vfs-mount", default=os.getenv("VFS_MOUNT", "/mnt/torbox_vfs"))
+    parser.add_argument("--cache-dir", default=os.getenv("VFS_CACHE", "/tmp/torbox_cache"))
+    args = parser.parse_args()
+
     main(
-        torbox_mount="/mnt/torbox",
-        vfs_mount="/mnt/torbox_vfs",
-        cache_dir="/tmp/torbox_cache"
+        torbox_mount=args.mount_source,
+        vfs_mount=args.vfs_mount,
+        cache_dir=args.cache_dir
     )

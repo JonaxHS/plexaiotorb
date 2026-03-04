@@ -30,6 +30,10 @@ active_jobs = {}      # Seguimiento de procesos en curso
 
 import json
 
+
+def get_media_mount_point() -> str:
+    return os.getenv("MOUNT_POINT") or os.getenv("VFS_MOUNT") or "/mnt/torbox"
+
 def save_config(new_cfg: dict):
     """Guarda config.yaml y recarga config_module.config en memoria."""
     config_path = os.getenv("CONFIG_PATH", "config.yaml")
@@ -64,9 +68,10 @@ def load_jobs():
         except Exception:
             active_jobs = {}
 
-def is_vfs_fuse_mounted(mount_point: str = "/mnt/torbox") -> bool:
+def is_vfs_fuse_mounted(mount_point: str = None) -> bool:
     """Valida que el mount sea realmente FUSE del VFS (no solo un volumen Docker)."""
     try:
+        mount_point = mount_point or get_media_mount_point()
         if not os.path.exists(mount_point):
             return False
 
@@ -373,7 +378,7 @@ def update_settings(req: SettingsUpdate):
 @app.get("/api/vfs/status")
 def vfs_status():
     try:
-        mount_point = os.getenv("MOUNT_POINT", "/mnt/torbox")
+        mount_point = get_media_mount_point()
         provider = get_vfs_provider()
 
         if not os.path.exists(mount_point):
@@ -1282,7 +1287,7 @@ def get_active_downloads():
 def api_check_cache(req: CacheCheckRequest):
     """Verifica si un archivo ya existe en TorBox"""
     from watcher import check_file_exists
-    path = check_file_exists(req.filename, req.title)
+    path = check_file_exists(req.filename, req.title, mount_path=get_media_mount_point())
     return {"cached": path is not None, "path": path}
 
 def get_torbox_torrents():
@@ -1362,7 +1367,7 @@ def list_torbox_dir(path: str = "/"):
 @app.post("/api/library/manual-link")
 def manual_link(req: ManualLinkRequest):
     """Vincula manualmente un archivo de TorBox a Plex"""
-    base = "/mnt/torbox"
+    base = get_media_mount_point()
     full_source_path = None
     skip_exists_check = False  # Flag para TorBox FUSE lazy-loading
     
