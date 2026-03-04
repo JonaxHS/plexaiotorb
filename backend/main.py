@@ -1477,8 +1477,6 @@ def manual_link(req: ManualLinkRequest):
                         os.path.join(base, normalized_file_name),
                         os.path.join(torrent_dir, preferred_basename) if preferred_basename else None,
                         os.path.join(base, preferred_basename) if preferred_basename else None,
-                        os.path.join(base, torrent_name),
-                        os.path.join(base, basename),
                     ]:
                         if not candidate:
                             continue
@@ -1486,52 +1484,48 @@ def manual_link(req: ManualLinkRequest):
                         if norm not in candidate_paths:
                             candidate_paths.append(norm)
 
+                    # 1) Intento exacto de archivo (nunca directorio)
                     for candidate in candidate_paths:
-                        if _path_exists_via_listdir(candidate):
-                            if _is_directory_via_listdir(candidate):
+                        if _path_exists_via_listdir(candidate) and not _is_directory_via_listdir(candidate):
+                            if _is_video_name(os.path.basename(candidate)):
+                                full_source_path = candidate
+                                break
+
+                    # 2) Si no hay match exacto, buscar videos dentro del torrent seleccionado
+                    if not full_source_path and _is_directory_via_listdir(torrent_dir):
+                        videos = []
+                        stack = [(torrent_dir, 0)]
+                        while stack:
+                            current_dir, depth = stack.pop()
+                            if depth > 5:
                                 continue
-                            full_source_path = candidate
-                            break
+                            try:
+                                entries = os.listdir(current_dir)
+                            except Exception:
+                                continue
 
-                    if not full_source_path:
-                        full_source_path = _find_basename_in_tree(torrent_dir, basename)
-
-                    if not full_source_path and preferred_basename:
-                        full_source_path = _find_basename_in_tree(torrent_dir, preferred_basename)
-
-                    if not full_source_path:
-                        try:
-                            root_entries = os.listdir(base)
-                            expected_tokens = _tokenize_name(basename)
-                            best_entry = None
-                            best_score = 0.0
-
-                            for entry in root_entries:
-                                entry_tokens = _tokenize_name(entry)
-                                if not entry_tokens or not expected_tokens:
+                            for entry in entries:
+                                entry_path = os.path.join(current_dir, entry)
+                                if _is_directory_via_listdir(entry_path):
+                                    if depth < 5:
+                                        stack.append((entry_path, depth + 1))
                                     continue
-                                overlap = len(entry_tokens & expected_tokens)
-                                score = overlap / max(1, len(expected_tokens))
-                                if score > best_score:
-                                    best_score = score
-                                    best_entry = entry
+                                if _is_video_name(entry):
+                                    videos.append(entry_path)
 
-                            if best_entry and best_score >= 0.45:
-                                root_candidate = os.path.join(base, best_entry)
-                                deep_match = _find_basename_in_tree(root_candidate, basename, max_depth=4)
-                                if not deep_match and preferred_basename:
-                                    deep_match = _find_basename_in_tree(root_candidate, preferred_basename, max_depth=4)
-                                full_source_path = deep_match or root_candidate
-                                logger.info(f"[ManualLink] Fallback por nombre aproximado: '{best_entry}' (score={best_score:.2f})")
-                        except Exception:
-                            pass
+                        preferred_lower = preferred_basename.lower() if preferred_basename else ""
+                        basename_lower = basename.lower() if basename else ""
 
-                    # Si resolvimos una carpeta, buscar el archivo de video real adentro
-                    if full_source_path and _is_directory_via_listdir(full_source_path):
-                        selected_video = _find_first_video_in_tree(full_source_path, preferred_basename=preferred_basename)
-                        if selected_video:
-                            logger.info(f"[ManualLink] Carpeta detectada, usando video interno: {selected_video}")
-                            full_source_path = selected_video
+                        if preferred_lower:
+                            full_source_path = next((v for v in videos if os.path.basename(v).lower() == preferred_lower), None)
+                        if not full_source_path and basename_lower:
+                            full_source_path = next((v for v in videos if os.path.basename(v).lower() == basename_lower), None)
+                        if not full_source_path and len(videos) == 1:
+                            full_source_path = videos[0]
+
+                        if not full_source_path and len(videos) > 1:
+                            logger.error(f"[ManualLink] Ambiguo: múltiples videos en torrent y ninguno coincide exacto. videos={videos}")
+                            raise HTTPException(status_code=409, detail="Múltiples archivos de video encontrados; selecciona el archivo exacto en TorBox Browser")
 
                     if full_source_path:
                         logger.info(f"[ManualLink] Encontrado en VFS: {full_source_path}")
@@ -1551,7 +1545,7 @@ def manual_link(req: ManualLinkRequest):
         # Path directo del VFS (legacy)
         full_source_path = os.path.join(base, req.path.lstrip("/"))
     
-    if not full_source_path or not _path_exists_via_listdir(full_source_path):
+    if not full_source_path or not _path_exists_via_listdir(full_source_path) or _is_directory_via_listdir(full_source_path):
         logger.error(f"[ManualLink] Archivo no existe: {full_source_path}")
         raise HTTPException(status_code=404, detail=f"Archivo fuente no encontrado: {req.path}")
         
