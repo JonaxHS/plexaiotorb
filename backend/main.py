@@ -1409,6 +1409,20 @@ def manual_link(req: ManualLinkRequest):
         _, ext = os.path.splitext((name or "").lower())
         return ext in {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".flv", ".webm", ".ts", ".m2ts", ".mpg", ".mpeg"}
 
+    def _stem(value: str) -> str:
+        return os.path.splitext((value or "").lower())[0]
+
+    def _name_matches_target(candidate_name: str, preferred_basename: str, api_basename: str) -> bool:
+        candidate_lower = (candidate_name or "").lower()
+        preferred_lower = (preferred_basename or "").lower()
+        api_lower = (api_basename or "").lower()
+
+        if candidate_lower and candidate_lower in {preferred_lower, api_lower}:
+            return True
+
+        candidate_stem = _stem(candidate_name)
+        return candidate_stem and candidate_stem in {_stem(preferred_basename), _stem(api_basename)}
+
     def _find_first_video_in_tree(root_dir: str, preferred_basename: str = "", max_depth: int = 4) -> Optional[str]:
         stack = [(root_dir, 0)]
         preferred_lower = (preferred_basename or "").strip().lower()
@@ -1442,6 +1456,7 @@ def manual_link(req: ManualLinkRequest):
 
     def _find_video_by_basename_global(root_dir: str, target_basenames: list[str], max_depth: int = 6) -> Optional[str]:
         targets = {t.strip().lower() for t in target_basenames if t and t.strip()}
+        target_stems = {_stem(t) for t in targets if t}
         if not targets:
             return None
 
@@ -1463,7 +1478,12 @@ def manual_link(req: ManualLinkRequest):
                     continue
 
                 entry_lower = entry.lower()
-                if entry_lower in targets and _is_video_name(entry):
+                entry_stem = _stem(entry_lower)
+                if (_is_video_name(entry) and (entry_lower in targets or entry_stem in target_stems)):
+                    return entry_path
+
+                # También aceptar entrada sin extensión si coincide por stem
+                if not os.path.splitext(entry_lower)[1] and entry_stem in target_stems:
                     return entry_path
 
         return None
@@ -1532,7 +1552,8 @@ def manual_link(req: ManualLinkRequest):
                     # 1) Intento exacto de archivo (nunca directorio)
                     for candidate in candidate_paths:
                         if _path_exists_via_listdir(candidate) and not _is_directory_via_listdir(candidate):
-                            if _is_video_name(os.path.basename(candidate)):
+                            candidate_name = os.path.basename(candidate)
+                            if _is_video_name(candidate_name) or _name_matches_target(candidate_name, preferred_basename, basename):
                                 full_source_path = candidate
                                 break
 
@@ -1546,7 +1567,8 @@ def manual_link(req: ManualLinkRequest):
                             time.sleep(1)
                             for candidate in candidate_paths:
                                 if _path_exists_via_listdir(candidate) and not _is_directory_via_listdir(candidate):
-                                    if _is_video_name(os.path.basename(candidate)):
+                                    candidate_name = os.path.basename(candidate)
+                                    if _is_video_name(candidate_name) or _name_matches_target(candidate_name, preferred_basename, basename):
                                         full_source_path = candidate
                                         break
                             if full_source_path:
