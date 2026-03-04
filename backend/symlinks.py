@@ -27,7 +27,7 @@ def clean_title(title: str) -> str:
     
     return clean
 
-def create_plex_symlink(source_file_path: str, media_type: str, title: str, year: str, tmdb_id: int, base_library_path: str = "/Media", season_number: int = None, original_title: str = None, use_original: bool = None):
+def create_plex_symlink(source_file_path: str, media_type: str, title: str, year: str, tmdb_id: int, base_library_path: str = "/Media", season_number: int = None, original_title: str = None, use_original: bool = None, preferred_filename: str = None):
     """"
     Crea la estructura de carpetas de Plex y el symlink al archivo descargado.
     Expected structure for movies: /Media/Movies/Nombre (Año) {tmdb-ID}/Archivo.ext
@@ -105,8 +105,15 @@ def create_plex_symlink(source_file_path: str, media_type: str, title: str, year
             ".webm", ".ts", ".m2ts", ".mpg", ".mpeg"
         }
         if file_ext.lower() not in valid_video_exts:
-            print(f"[Symlink] ⚠️ Extensión no válida detectada en origen ('{file_ext}'). Usando .mkv")
-            file_ext = ".mkv"
+            preferred_ext = ""
+            if preferred_filename:
+                _, preferred_ext = os.path.splitext(preferred_filename)
+            if preferred_ext.lower() in valid_video_exts:
+                print(f"[Symlink] Usando extensión desde AIOStreams: {preferred_ext}")
+                file_ext = preferred_ext
+            else:
+                print(f"[Symlink] ⚠️ Extensión no válida detectada en origen ('{file_ext}'). Usando .mkv")
+                file_ext = ".mkv"
         
         # Crear el nombre del archivo según el formato de Plex
         if media_type == "movie":

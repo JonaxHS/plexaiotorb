@@ -479,6 +479,7 @@ export default function App() {
                     media_type: browsingJob.media_type,
                     title: browsingJob.title,
                     original_title: browsingJob.req ? browsingJob.req.original_title : browsingJob.original_title,
+                    filename: browsingJob.req ? browsingJob.req.filename : undefined,
                     year: browsingJob.req ? browsingJob.req.year : (browsingJob.year || ""),
                     season_number: browsingJob.season,
                     job_id: browsingJob.job_id

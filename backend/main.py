@@ -223,6 +223,7 @@ class ManualLinkRequest(BaseModel):
     media_type: str
     title: str
     original_title: Optional[str] = None
+    filename: Optional[str] = None
     year: str
     season_number: Optional[int] = None
     job_id: Optional[str] = None
@@ -1414,6 +1415,9 @@ def manual_link(req: ManualLinkRequest):
                 
                 if file:
                     file_name = (file.get("name", "") or "").strip()
+                    preferred_name = (req.filename or "").strip()
+                    if preferred_name:
+                        logger.info(f"[ManualLink] Filename preferido desde AIOStreams: {preferred_name}")
                     normalized_file_name = file_name.lstrip("/").replace("\\", "/")
                     torrent_dir = os.path.join(base, torrent_name)
 
@@ -1423,14 +1427,19 @@ def manual_link(req: ManualLinkRequest):
                         file_rel = file_rel[len(torrent_prefix):]
 
                     basename = os.path.basename(file_rel)
+                    preferred_basename = os.path.basename(preferred_name).strip() if preferred_name else ""
                     candidate_paths = []
                     for candidate in [
                         os.path.join(torrent_dir, file_rel),
                         os.path.join(torrent_dir, basename),
                         os.path.join(base, normalized_file_name),
+                        os.path.join(torrent_dir, preferred_basename) if preferred_basename else None,
+                        os.path.join(base, preferred_basename) if preferred_basename else None,
                         os.path.join(base, torrent_name),
                         os.path.join(base, basename),
                     ]:
+                        if not candidate:
+                            continue
                         norm = os.path.normpath(candidate)
                         if norm not in candidate_paths:
                             candidate_paths.append(norm)
@@ -1514,6 +1523,7 @@ def manual_link(req: ManualLinkRequest):
         media_type=req.media_type,
         title=req.title,
         original_title=original_title,
+        preferred_filename=req.filename,
         year=req.year,
         tmdb_id=req.tmdb_id,
         base_library_path=config_module.config.get("plex", {}).get("library_path", "/Media"),
