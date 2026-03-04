@@ -1398,6 +1398,48 @@ def manual_link(req: ManualLinkRequest):
                         pass
         return None
 
+    def _is_directory_via_listdir(path: str) -> bool:
+        try:
+            os.listdir(path)
+            return True
+        except Exception:
+            return False
+
+    def _is_video_name(name: str) -> bool:
+        _, ext = os.path.splitext((name or "").lower())
+        return ext in {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".flv", ".webm", ".ts", ".m2ts", ".mpg", ".mpeg"}
+
+    def _find_first_video_in_tree(root_dir: str, preferred_basename: str = "", max_depth: int = 4) -> Optional[str]:
+        stack = [(root_dir, 0)]
+        preferred_lower = (preferred_basename or "").strip().lower()
+        fallback_videos = []
+
+        while stack:
+            current_dir, depth = stack.pop()
+            if depth > max_depth:
+                continue
+            try:
+                entries = os.listdir(current_dir)
+            except Exception:
+                continue
+
+            for entry in entries:
+                entry_path = os.path.join(current_dir, entry)
+                if _is_directory_via_listdir(entry_path):
+                    if depth < max_depth:
+                        stack.append((entry_path, depth + 1))
+                    continue
+
+                if not _is_video_name(entry):
+                    continue
+
+                if preferred_lower and entry.lower() == preferred_lower:
+                    return entry_path
+
+                fallback_videos.append(entry_path)
+
+        return fallback_videos[0] if fallback_videos else None
+
     def _tokenize_name(value: str) -> set:
         clean = re.sub(r"[^a-z0-9]+", " ", (value or "").lower())
         return {t for t in clean.split() if len(t) >= 3}
@@ -1452,6 +1494,9 @@ def manual_link(req: ManualLinkRequest):
                     if not full_source_path:
                         full_source_path = _find_basename_in_tree(torrent_dir, basename)
 
+                    if not full_source_path and preferred_basename:
+                        full_source_path = _find_basename_in_tree(torrent_dir, preferred_basename)
+
                     if not full_source_path:
                         try:
                             root_entries = os.listdir(base)
@@ -1472,10 +1517,19 @@ def manual_link(req: ManualLinkRequest):
                             if best_entry and best_score >= 0.45:
                                 root_candidate = os.path.join(base, best_entry)
                                 deep_match = _find_basename_in_tree(root_candidate, basename, max_depth=4)
+                                if not deep_match and preferred_basename:
+                                    deep_match = _find_basename_in_tree(root_candidate, preferred_basename, max_depth=4)
                                 full_source_path = deep_match or root_candidate
                                 logger.info(f"[ManualLink] Fallback por nombre aproximado: '{best_entry}' (score={best_score:.2f})")
                         except Exception:
                             pass
+
+                    # Si resolvimos una carpeta, buscar el archivo de video real adentro
+                    if full_source_path and _is_directory_via_listdir(full_source_path):
+                        selected_video = _find_first_video_in_tree(full_source_path, preferred_basename=preferred_basename)
+                        if selected_video:
+                            logger.info(f"[ManualLink] Carpeta detectada, usando video interno: {selected_video}")
+                            full_source_path = selected_video
 
                     if full_source_path:
                         logger.info(f"[ManualLink] Encontrado en VFS: {full_source_path}")
